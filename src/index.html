@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <base href="/run/health-cards/" />
+  <title>Health Cards</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--hub-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+      font-size: var(--hub-font-size, 15px);
+      background: var(--hub-bg, #f3f4f6);
+      color: var(--hub-text, #111827);
+      min-height: 100vh;
+    }
+
+    .container { max-width: 680px; margin: 0 auto; padding: 24px 16px; }
+
+    /* Page header */
+    .page-header { margin-bottom: 24px; }
+    .page-header h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: var(--hub-text-muted, #6b7280); font-size: 0.875rem; }
+
+    /* Member list */
+    .member-list { display: flex; flex-direction: column; gap: 8px; }
+    .member-card {
+      display: flex; align-items: center; gap: 14px;
+      background: var(--hub-surface, #fff);
+      border: 1px solid var(--hub-border, #e5e7eb);
+      border-radius: var(--hub-radius, 12px);
+      padding: 14px 16px;
+      cursor: pointer; width: 100%; text-align: left;
+      transition: border-color 0.15s;
+    }
+    .member-card:hover { border-color: var(--hub-primary, #4f46e5); }
+    .member-avatar {
+      width: 42px; height: 42px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 700; font-size: 1.1rem; flex-shrink: 0;
+    }
+    .member-avatar-lg {
+      width: 52px; height: 52px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 700; font-size: 1.3rem; flex-shrink: 0;
+    }
+    .member-info { flex: 1; min-width: 0; }
+    .member-name { font-weight: 600; }
+    .member-role { font-size: 0.8rem; color: var(--hub-text-muted, #6b7280); text-transform: capitalize; }
+    .allergy-badge {
+      padding: 3px 10px; border-radius: 20px; font-size: 0.78rem; font-weight: 600; flex-shrink: 0;
+    }
+    .badge-urgent  { background: #fef2f2; color: #dc2626; }
+    .badge-normal  { background: #fef9c3; color: #92400e; }
+    .badge-none    { background: var(--hub-border, #e5e7eb); color: var(--hub-text-muted, #6b7280); }
+    .chevron { color: var(--hub-text-muted, #9ca3af); font-size: 1.3rem; }
+
+    /* Detail header */
+    .detail-header {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 24px; flex-wrap: wrap;
+    }
+    .back-btn {
+      background: none; border: 1px solid var(--hub-border, #e5e7eb);
+      border-radius: 8px; padding: 7px 14px; font-size: 0.875rem;
+      cursor: pointer; color: var(--hub-text, #111827); flex-shrink: 0;
+    }
+    .back-btn:hover { background: var(--hub-bg, #f3f4f6); }
+    .detail-member { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+    .detail-name { font-size: 1.2rem; font-weight: 700; }
+    .detail-role { font-size: 0.8rem; color: var(--hub-text-muted, #6b7280); text-transform: capitalize; }
+
+    /* Sections */
+    .section { margin-bottom: 24px; }
+    .section-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+    }
+    .section-header h2 {
+      font-size: 0.75rem; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--hub-text-muted, #6b7280);
+    }
+
+    /* Entry cards */
+    .entry-card {
+      background: var(--hub-surface, #fff);
+      border: 1px solid var(--hub-border, #e5e7eb);
+      border-radius: var(--hub-radius, 10px);
+      padding: 14px 16px; margin-bottom: 8px;
+    }
+    .entry-header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 10px; margin-bottom: 6px;
+    }
+    .entry-title { font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .entry-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .entry-field { font-size: 0.875rem; color: var(--hub-text-muted, #374151); margin-top: 5px; line-height: 1.5; }
+    .entry-notes { font-style: italic; }
+    .steps { margin-top: 2px; white-space: pre-line; }
+    .dose { font-size: 0.8rem; font-weight: 400; color: var(--hub-text-muted, #6b7280); background: var(--hub-bg, #f3f4f6); padding: 2px 8px; border-radius: 4px; }
+
+    /* Severity badges */
+    .severity-badge {
+      font-size: 0.7rem; font-weight: 700; padding: 2px 8px;
+      border-radius: 12px; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .sev-mild         { background: #d1fae5; color: #065f46; }
+    .sev-moderate     { background: #fef3c7; color: #92400e; }
+    .sev-severe       { background: #fed7aa; color: #9a3412; }
+    .sev-anaphylactic { background: #fee2e2; color: #991b1b; }
+
+    /* Contact specifics */
+    .contact-priority {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; background: var(--hub-primary, #4f46e5);
+      color: var(--hub-primary-fg, #fff); border-radius: 50%;
+      font-size: 0.72rem; font-weight: 700; flex-shrink: 0;
+    }
+    .contact-rel { font-size: 0.8rem; font-weight: 400; color: var(--hub-text-muted, #6b7280); }
+    .phone-link { color: var(--hub-primary, #4f46e5); text-decoration: none; font-weight: 600; }
+    .phone-link:hover { text-decoration: underline; }
+
+    /* Buttons */
+    .btn-primary {
+      background: var(--hub-primary, #111827); color: var(--hub-primary-fg, #fff);
+      border: none; border-radius: 8px; padding: 9px 18px;
+      font-size: 0.875rem; font-weight: 600; cursor: pointer;
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--hub-primary-hover, #374151); }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-secondary {
+      background: var(--hub-surface, #fff); color: var(--hub-text, #374151);
+      border: 1px solid var(--hub-border, #d1d5db); border-radius: 8px; padding: 9px 18px;
+      font-size: 0.875rem; font-weight: 600; cursor: pointer;
+    }
+    .btn-secondary:hover { background: var(--hub-bg, #f9fafb); }
+    .btn-add {
+      background: none; color: var(--hub-primary, #4f46e5);
+      border: 1px dashed var(--hub-primary, #4f46e5);
+      border-radius: 8px; padding: 5px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    }
+    .btn-add:hover { background: #eff6ff; }
+    .btn-icon {
+      background: none; border: 1px solid var(--hub-border, #e5e7eb);
+      border-radius: 6px; padding: 3px 10px; font-size: 0.78rem;
+      cursor: pointer; color: var(--hub-text-muted, #374151);
+    }
+    .btn-icon:hover { background: var(--hub-bg, #f3f4f6); }
+    .btn-danger { color: #dc2626; border-color: #fecaca; }
+    .btn-danger:hover { background: #fef2f2; }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+      display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px;
+    }
+    .modal {
+      background: var(--hub-surface, #fff); border-radius: 14px;
+      padding: 24px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto;
+    }
+    .modal h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 18px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+    /* Form fields */
+    .form-field { margin-bottom: 14px; }
+    .form-field label {
+      display: block; font-size: 0.85rem; font-weight: 600;
+      color: var(--hub-text-muted, #374151); margin-bottom: 5px;
+    }
+    .required { color: #dc2626; }
+    .form-field input, .form-field select, .form-field textarea {
+      width: 100%; padding: 9px 12px;
+      border: 1px solid var(--hub-border, #d1d5db); border-radius: 8px;
+      font-size: 0.9rem; font-family: inherit;
+      background: var(--hub-bg, #f9fafb); color: var(--hub-text, #111827);
+    }
+    .form-field input:focus, .form-field select:focus, .form-field textarea:focus {
+      outline: 2px solid var(--hub-primary, #4f46e5); outline-offset: -1px;
+    }
+    .form-field textarea { resize: vertical; }
+
+    /* Empty state */
+    .empty-text { font-size: 0.875rem; color: var(--hub-text-muted, #9ca3af); padding: 8px 0; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="container"><p class="subtitle" style="margin-top:40px">Loading…</p></div>
+</div>
+
+<script type="module">
+import { esc, memberColor, initial, hubConfirm } from "/hub-sdk.js";
+
+const CONTEXT = window.__CONTEXT_URL ?? "";
+const DB      = window.__DB_URL      ?? "";
+const APP_ID  = window.__APP_ID      ?? "health-cards";
+
+let members     = [];
+let profiles    = {};   // member_id  → profile row | null
+let allergies   = {};   // profile_id → allergy[]
+let medications = {};   // profile_id → medication[]
+let contacts    = {};   // profile_id → contact[]
+
+let selectedMemberId = null;
+let modalEl = null;
+
+// ── DB helper ────────────────────────────────────────────────────────────────
+async function db(sql, params = []) {
+  if (!DB) return { rows: [] };
+  const res = await fetch(DB, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql, params }),
+  });
+  return res.json();
+}
+
+// ── Modal helpers ────────────────────────────────────────────────────────────
+function openModal(html) {
+  closeModal();
+  modalEl = document.createElement("div");
+  modalEl.className = "modal-backdrop";
+  modalEl.innerHTML = `<div class="modal">${html}</div>`;
+  modalEl.addEventListener("click", e => { if (e.target === modalEl) closeModal(); });
+  document.body.appendChild(modalEl);
+}
+window.closeModal = () => { modalEl?.remove(); modalEl = null; };
+
+// ── Data loading ─────────────────────────────────────────────────────────────
+async function loadMembers() {
+  if (!CONTEXT) {
+    members = [
+      { id: "demo-m1", name: "Emma", role: "child" },
+      { id: "demo-m2", name: "Liam", role: "child" },
+      { id: "demo-m3", name: "Sarah", role: "adult" },
+    ];
+    return;
+  }
+  try {
+    const res = await fetch(`${CONTEXT}?keys=family.members`);
+    members = ((await res.json())["family.members"]) ?? [];
+  } catch { members = []; }
+}
+
+async function loadProfileData(memberId) {
+  if (!DB) {
+    if (memberId === "demo-m2") {
+      profiles[memberId] = { id: "demo-p1", member_id: memberId, notes: "" };
+      const pid = "demo-p1";
+      allergies[pid] = [{
+        id: "demo-a1", profile_id: pid, name: "Peanuts", severity: "anaphylactic",
+        triggers: "All peanut products, including oils used in cooking",
+        symptoms: "Hives, lip/face swelling, difficulty breathing, vomiting",
+        response_steps: "1. Administer EpiPen Jr. to outer thigh, hold 10 seconds\n2. Call 911 immediately\n3. Call parents (see contacts below)",
+        sort_order: 0,
+      }];
+      medications[pid] = [
+        { id: "demo-med1", profile_id: pid, name: "EpiPen Jr.", dose: "0.15mg", when_to_give: "Severe reaction or any difficulty breathing", location: "Red case — front pocket of backpack", notes: "Hold in place for 10 seconds. Massage injection site afterward." },
+        { id: "demo-med2", profile_id: pid, name: "Benadryl", dose: "12.5mg (5mL)", when_to_give: "Mild reactions only (hives without breathing issues)", location: "Small blue pouch in backpack", notes: "Do not give if EpiPen was already used." },
+      ];
+      contacts[pid] = [
+        { id: "demo-c1", profile_id: pid, name: "Sarah Mayer", relationship: "Mom", phone: "555-123-4567", priority: 1 },
+        { id: "demo-c2", profile_id: pid, name: "Adam Mayer", relationship: "Dad", phone: "555-765-4321", priority: 2 },
+        { id: "demo-c3", profile_id: pid, name: "Dr. Lisa Chen", relationship: "Pediatrician", phone: "555-999-0000", priority: 3 },
+      ];
+    } else {
+      profiles[memberId] = null;
+    }
+    return;
+  }
+
+  const profileRes = await db(
+    "SELECT * FROM health_profiles WHERE household_id = current_setting('app.household_id', true)::uuid AND member_id = ? LIMIT 1",
+    [memberId]
+  );
+
+  if (profileRes.rows.length === 0) {
+    profiles[memberId] = null;
+    return;
+  }
+
+  const profile = profileRes.rows[0];
+  profiles[memberId] = profile;
+  const pid = profile.id;
+
+  const [ar, mr, cr] = await Promise.all([
+    db("SELECT * FROM health_allergies   WHERE household_id = current_setting('app.household_id', true)::uuid AND profile_id = ? ORDER BY sort_order, created_at", [pid]),
+    db("SELECT * FROM health_medications WHERE household_id = current_setting('app.household_id', true)::uuid AND profile_id = ? ORDER BY created_at", [pid]),
+    db("SELECT * FROM health_contacts    WHERE household_id = current_setting('app.household_id', true)::uuid AND profile_id = ? ORDER BY priority, created_at", [pid]),
+  ]);
+
+  allergies[pid]   = ar.rows;
+  medications[pid] = mr.rows;
+  contacts[pid]    = cr.rows;
+}
+
+async function ensureProfile(memberId) {
+  if (profiles[memberId]) return profiles[memberId];
+  const id  = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await db(
+    "INSERT INTO health_profiles (id, household_id, member_id, notes, created_at, updated_at) VALUES (?, current_setting('app.household_id', true)::uuid, ?, '', ?, ?)",
+    [id, memberId, now, now]
+  );
+  profiles[memberId] = { id, member_id: memberId, notes: "" };
+  allergies[id]   = [];
+  medications[id] = [];
+  contacts[id]    = [];
+  return profiles[memberId];
+}
+
+// ── Severity helpers ─────────────────────────────────────────────────────────
+const SEV_LABEL = { mild: "Mild", moderate: "Moderate", severe: "Severe", anaphylactic: "Anaphylactic" };
+const SEV_CLASS = { mild: "sev-mild", moderate: "sev-moderate", severe: "sev-severe", anaphylactic: "sev-anaphylactic" };
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function render() {
+  if (selectedMemberId) renderDetail();
+  else renderList();
+}
+
+function renderList() {
+  const cards = members.map(m => {
+    const profileLoaded = m.id in profiles;
+    const pid = profiles[m.id]?.id;
+    const al  = pid ? (allergies[pid] ?? []) : [];
+    const hasSevere = al.some(a => a.severity === "anaphylactic" || a.severity === "severe");
+    const badge = !profileLoaded
+      ? `<span class="allergy-badge badge-none">…</span>`
+      : al.length > 0
+        ? `<span class="allergy-badge ${hasSevere ? "badge-urgent" : "badge-normal"}">${al.length} ${al.length === 1 ? "allergy" : "allergies"}</span>`
+        : `<span class="allergy-badge badge-none">No allergies on file</span>`;
+    const color = memberColor(m.id, members);
+    return `
+      <button class="member-card" onclick="selectMember('${esc(m.id)}')">
+        <div class="member-avatar" style="background:${esc(color)}">${esc(initial(m.name))}</div>
+        <div class="member-info">
+          <div class="member-name">${esc(m.name)}</div>
+          <div class="member-role">${esc(m.role)}</div>
+        </div>
+        ${badge}
+        <span class="chevron">›</span>
+      </button>`;
+  }).join("");
+
+  document.getElementById("app").innerHTML = `
+    <div class="container">
+      <div class="page-header">
+        <h1>Health Cards</h1>
+        <p class="subtitle">Allergy &amp; emergency information for your family</p>
+      </div>
+      <div class="member-list">
+        ${members.length === 0 ? '<p class="empty-text">No family members found.</p>' : cards}
+      </div>
+    </div>`;
+}
+
+function renderDetail() {
+  const member = members.find(m => m.id === selectedMemberId);
+  if (!member) { selectedMemberId = null; render(); return; }
+
+  const pid = profiles[selectedMemberId]?.id;
+  const al  = pid ? (allergies[pid]   ?? []) : [];
+  const ml  = pid ? (medications[pid] ?? []) : [];
+  const cl  = pid ? (contacts[pid]    ?? []) : [];
+  const color = memberColor(member.id, members);
+
+  const allergyRows = al.map(a => `
+    <div class="entry-card">
+      <div class="entry-header">
+        <div class="entry-title">
+          ${esc(a.name)}
+          <span class="severity-badge ${SEV_CLASS[a.severity] ?? ""}">${SEV_LABEL[a.severity] ?? esc(a.severity)}</span>
+        </div>
+        <div class="entry-actions">
+          <button class="btn-icon" onclick="openAllergyModal('${esc(a.id)}')">Edit</button>
+          <button class="btn-icon btn-danger" onclick="deleteAllergy('${esc(a.id)}')">Remove</button>
+        </div>
+      </div>
+      ${a.triggers       ? `<div class="entry-field"><strong>Triggers:</strong> ${esc(a.triggers)}</div>` : ""}
+      ${a.symptoms       ? `<div class="entry-field"><strong>Reaction signs:</strong> ${esc(a.symptoms)}</div>` : ""}
+      ${a.response_steps ? `<div class="entry-field"><strong>What to do:</strong><div class="steps">${esc(a.response_steps).replace(/\n/g, "<br>")}</div></div>` : ""}
+    </div>`).join("");
+
+  const medRows = ml.map(m => `
+    <div class="entry-card">
+      <div class="entry-header">
+        <div class="entry-title">
+          ${esc(m.name)}
+          ${m.dose ? `<span class="dose">${esc(m.dose)}</span>` : ""}
+        </div>
+        <div class="entry-actions">
+          <button class="btn-icon" onclick="openMedicationModal('${esc(m.id)}')">Edit</button>
+          <button class="btn-icon btn-danger" onclick="deleteMedication('${esc(m.id)}')">Remove</button>
+        </div>
+      </div>
+      ${m.when_to_give ? `<div class="entry-field"><strong>When to give:</strong> ${esc(m.when_to_give)}</div>` : ""}
+      ${m.location     ? `<div class="entry-field"><strong>Location:</strong> ${esc(m.location)}</div>` : ""}
+      ${m.notes        ? `<div class="entry-field entry-notes">${esc(m.notes)}</div>` : ""}
+    </div>`).join("");
+
+  const contactRows = cl.map((c, i) => `
+    <div class="entry-card">
+      <div class="entry-header">
+        <div class="entry-title">
+          <span class="contact-priority">${i + 1}</span>
+          ${esc(c.name)}
+          ${c.relationship ? `<span class="contact-rel">· ${esc(c.relationship)}</span>` : ""}
+        </div>
+        <div class="entry-actions">
+          <button class="btn-icon" onclick="openContactModal('${esc(c.id)}')">Edit</button>
+          <button class="btn-icon btn-danger" onclick="deleteContact('${esc(c.id)}')">Remove</button>
+        </div>
+      </div>
+      ${c.phone ? `<div class="entry-field"><a href="tel:${esc(c.phone)}" class="phone-link">${esc(c.phone)}</a></div>` : ""}
+    </div>`).join("");
+
+  document.getElementById("app").innerHTML = `
+    <div class="container">
+      <div class="detail-header">
+        <button class="back-btn" onclick="goBack()">← Back</button>
+        <div class="detail-member">
+          <div class="member-avatar-lg" style="background:${esc(color)}">${esc(initial(member.name))}</div>
+          <div>
+            <div class="detail-name">${esc(member.name)}</div>
+            <div class="detail-role">${esc(member.role)}</div>
+          </div>
+        </div>
+        <button class="btn-primary" onclick="printCard()">Print Card</button>
+      </div>
+
+      <section class="section">
+        <div class="section-header">
+          <h2>Allergies</h2>
+          <button class="btn-add" onclick="openAllergyModal()">+ Add</button>
+        </div>
+        ${al.length === 0 ? '<p class="empty-text">No allergies on file.</p>' : allergyRows}
+      </section>
+
+      <section class="section">
+        <div class="section-header">
+          <h2>Emergency Medications</h2>
+          <button class="btn-add" onclick="openMedicationModal()">+ Add</button>
+        </div>
+        ${ml.length === 0 ? '<p class="empty-text">No emergency medications on file.</p>' : medRows}
+      </section>
+
+      <section class="section">
+        <div class="section-header">
+          <h2>Emergency Contacts</h2>
+          <button class="btn-add" onclick="openContactModal()">+ Add</button>
+        </div>
+        ${cl.length === 0 ? '<p class="empty-text">No contacts on file.</p>' : contactRows}
+      </section>
+    </div>`;
+}
+
+// ── Navigation ───────────────────────────────────────────────────────────────
+window.goBack = () => { selectedMemberId = null; render(); };
+
+window.selectMember = async function(memberId) {
+  selectedMemberId = memberId;
+  if (profiles[memberId] === undefined) {
+    document.getElementById("app").innerHTML =
+      `<div class="container"><p class="subtitle" style="margin-top:40px">Loading…</p></div>`;
+    await loadProfileData(memberId);
+  }
+  render();
+};
+
+// ── Allergy CRUD ─────────────────────────────────────────────────────────────
+window.openAllergyModal = function(allergyId) {
+  const pid = profiles[selectedMemberId]?.id;
+  const ex  = allergyId ? (allergies[pid] ?? []).find(a => a.id === allergyId) : null;
+  openModal(`
+    <h2>${ex ? "Edit Allergy" : "Add Allergy"}</h2>
+    <div class="form-field">
+      <label>Allergy name <span class="required">*</span></label>
+      <input id="f-al-name" type="text" value="${ex ? esc(ex.name) : ""}" placeholder="e.g. Peanuts, Penicillin, Bee stings" />
+    </div>
+    <div class="form-field">
+      <label>Severity</label>
+      <select id="f-al-severity">
+        <option value="mild"         ${ex?.severity === "mild"                    ? "selected" : ""}>Mild</option>
+        <option value="moderate"     ${(!ex || ex.severity === "moderate")        ? "selected" : ""}>Moderate</option>
+        <option value="severe"       ${ex?.severity === "severe"                  ? "selected" : ""}>Severe</option>
+        <option value="anaphylactic" ${ex?.severity === "anaphylactic"            ? "selected" : ""}>Anaphylactic (life-threatening)</option>
+      </select>
+    </div>
+    <div class="form-field">
+      <label>What triggers it</label>
+      <textarea id="f-al-triggers" rows="2" placeholder="e.g. All peanut products, including oils used in cooking">${ex ? esc(ex.triggers) : ""}</textarea>
+    </div>
+    <div class="form-field">
+      <label>Signs of a reaction</label>
+      <textarea id="f-al-symptoms" rows="2" placeholder="e.g. Hives, face/lip swelling, difficulty breathing, vomiting">${ex ? esc(ex.symptoms) : ""}</textarea>
+    </div>
+    <div class="form-field">
+      <label>What to do</label>
+      <textarea id="f-al-steps" rows="4" placeholder="Step-by-step, e.g.:\n1. Administer EpiPen to outer thigh\n2. Call 911\n3. Call parents">${ex ? esc(ex.response_steps) : ""}</textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" onclick="submitAllergyForm('${allergyId ?? ""}')">${ex ? "Save" : "Add Allergy"}</button>
+    </div>`);
+  document.getElementById("f-al-name").focus();
+};
+
+window.submitAllergyForm = async function(allergyId) {
+  const name = document.getElementById("f-al-name").value.trim();
+  if (!name) { document.getElementById("f-al-name").focus(); return; }
+
+  const severity = document.getElementById("f-al-severity").value;
+  const triggers = document.getElementById("f-al-triggers").value.trim();
+  const symptoms = document.getElementById("f-al-symptoms").value.trim();
+  const steps    = document.getElementById("f-al-steps").value.trim();
+
+  try {
+    const profile = await ensureProfile(selectedMemberId);
+    const pid = profile.id;
+    const now = new Date().toISOString();
+
+    if (allergyId) {
+      const idx = (allergies[pid] ?? []).findIndex(a => a.id === allergyId);
+      if (idx >= 0) allergies[pid][idx] = { ...allergies[pid][idx], name, severity, triggers, symptoms, response_steps: steps };
+      closeModal();
+      render();
+      db(
+        "UPDATE health_allergies SET name = ?, severity = ?, triggers = ?, symptoms = ?, response_steps = ? WHERE id = ? AND household_id = current_setting('app.household_id', true)::uuid",
+        [name, severity, triggers, symptoms, steps, allergyId]
+      );
+    } else {
+      const id         = crypto.randomUUID();
+      const sort_order = (allergies[pid] ?? []).length;
+      if (!allergies[pid]) allergies[pid] = [];
+      allergies[pid].push({ id, profile_id: pid, name, severity, triggers, symptoms, response_steps: steps, sort_order, created_at: now });
+      closeModal();
+      render();
+      db(
+        "INSERT INTO health_allergies (id, household_id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, current_setting('app.household_id', true)::uuid, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [id, pid, name, severity, triggers, symptoms, steps, sort_order, now]
+      );
+    }
+  } catch (e) {
+    console.error(e);
+  }
+};
+
+window.deleteAllergy = async function(allergyId) {
+  const ok = await hubConfirm({ message: "Remove this allergy?", confirmLabel: "Remove", destructive: true });
+  if (!ok) return;
+  const pid = profiles[selectedMemberId]?.id;
+  if (pid) allergies[pid] = (allergies[pid] ?? []).filter(a => a.id !== allergyId);
+  render();
+  db("DELETE FROM health_allergies WHERE id = ? AND household_id = current_setting('app.household_id', true)::uuid", [allergyId]);
+};
+
+// ── Medication CRUD ──────────────────────────────────────────────────────────
+window.openMedicationModal = function(medId) {
+  const pid = profiles[selectedMemberId]?.id;
+  const ex  = medId ? (medications[pid] ?? []).find(m => m.id === medId) : null;
+  openModal(`
+    <h2>${ex ? "Edit Medication" : "Add Emergency Medication"}</h2>
+    <div class="form-field">
+      <label>Medication name <span class="required">*</span></label>
+      <input id="f-med-name" type="text" value="${ex ? esc(ex.name) : ""}" placeholder="e.g. EpiPen Jr., Benadryl" />
+    </div>
+    <div class="form-field">
+      <label>Dose</label>
+      <input id="f-med-dose" type="text" value="${ex ? esc(ex.dose) : ""}" placeholder="e.g. 0.15mg, 12.5mg (5mL)" />
+    </div>
+    <div class="form-field">
+      <label>When to give it</label>
+      <input id="f-med-when" type="text" value="${ex ? esc(ex.when_to_give) : ""}" placeholder="e.g. Severe reaction or difficulty breathing" />
+    </div>
+    <div class="form-field">
+      <label>Where it's kept</label>
+      <input id="f-med-location" type="text" value="${ex ? esc(ex.location) : ""}" placeholder="e.g. Red case in front pocket of backpack" />
+    </div>
+    <div class="form-field">
+      <label>Notes</label>
+      <textarea id="f-med-notes" rows="3" placeholder="e.g. Hold in place for 10 seconds. Massage injection site afterward.">${ex ? esc(ex.notes) : ""}</textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" onclick="submitMedicationForm('${medId ?? ""}')">${ex ? "Save" : "Add Medication"}</button>
+    </div>`);
+  document.getElementById("f-med-name").focus();
+};
+
+window.submitMedicationForm = async function(medId) {
+  const name = document.getElementById("f-med-name").value.trim();
+  if (!name) { document.getElementById("f-med-name").focus(); return; }
+
+  const dose     = document.getElementById("f-med-dose").value.trim();
+  const when_to  = document.getElementById("f-med-when").value.trim();
+  const location = document.getElementById("f-med-location").value.trim();
+  const notes    = document.getElementById("f-med-notes").value.trim();
+
+  try {
+    const profile = await ensureProfile(selectedMemberId);
+    const pid = profile.id;
+    const now = new Date().toISOString();
+
+    if (medId) {
+      const idx = (medications[pid] ?? []).findIndex(m => m.id === medId);
+      if (idx >= 0) medications[pid][idx] = { ...medications[pid][idx], name, dose, when_to_give: when_to, location, notes };
+      closeModal();
+      render();
+      db(
+        "UPDATE health_medications SET name = ?, dose = ?, when_to_give = ?, location = ?, notes = ? WHERE id = ? AND household_id = current_setting('app.household_id', true)::uuid",
+        [name, dose, when_to, location, notes, medId]
+      );
+    } else {
+      const id = crypto.randomUUID();
+      if (!medications[pid]) medications[pid] = [];
+      medications[pid].push({ id, profile_id: pid, name, dose, when_to_give: when_to, location, notes, created_at: now });
+      closeModal();
+      render();
+      db(
+        "INSERT INTO health_medications (id, household_id, profile_id, name, dose, when_to_give, location, notes, created_at) VALUES (?, current_setting('app.household_id', true)::uuid, ?, ?, ?, ?, ?, ?, ?)",
+        [id, pid, name, dose, when_to, location, notes, now]
+      );
+    }
+  } catch (e) {
+    console.error(e);
+  }
+};
+
+window.deleteMedication = async function(medId) {
+  const ok = await hubConfirm({ message: "Remove this medication?", confirmLabel: "Remove", destructive: true });
+  if (!ok) return;
+  const pid = profiles[selectedMemberId]?.id;
+  if (pid) medications[pid] = (medications[pid] ?? []).filter(m => m.id !== medId);
+  render();
+  db("DELETE FROM health_medications WHERE id = ? AND household_id = current_setting('app.household_id', true)::uuid", [medId]);
+};
+
+// ── Contact CRUD ─────────────────────────────────────────────────────────────
+window.openContactModal = function(contactId) {
+  const pid = profiles[selectedMemberId]?.id;
+  const ex  = contactId ? (contacts[pid] ?? []).find(c => c.id === contactId) : null;
+  openModal(`
+    <h2>${ex ? "Edit Contact" : "Add Emergency Contact"}</h2>
+    <div class="form-field">
+      <label>Name <span class="required">*</span></label>
+      <input id="f-ct-name" type="text" value="${ex ? esc(ex.name) : ""}" placeholder="e.g. Sarah Mayer" />
+    </div>
+    <div class="form-field">
+      <label>Relationship</label>
+      <input id="f-ct-rel" type="text" value="${ex ? esc(ex.relationship) : ""}" placeholder="e.g. Mom, Dad, Pediatrician" />
+    </div>
+    <div class="form-field">
+      <label>Phone number <span class="required">*</span></label>
+      <input id="f-ct-phone" type="tel" value="${ex ? esc(ex.phone) : ""}" placeholder="e.g. 555-123-4567" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" onclick="submitContactForm('${contactId ?? ""}')">${ex ? "Save" : "Add Contact"}</button>
+    </div>`);
+  document.getElementById("f-ct-name").focus();
+};
+
+window.submitContactForm = async function(contactId) {
+  const name  = document.getElementById("f-ct-name").value.trim();
+  const phone = document.getElementById("f-ct-phone").value.trim();
+  if (!name)  { document.getElementById("f-ct-name").focus();  return; }
+  if (!phone) { document.getElementById("f-ct-phone").focus(); return; }
+
+  const rel = document.getElementById("f-ct-rel").value.trim();
+
+  try {
+    const profile = await ensureProfile(selectedMemberId);
+    const pid = profile.id;
+    const now = new Date().toISOString();
+
+    if (contactId) {
+      const idx = (contacts[pid] ?? []).findIndex(c => c.id === contactId);
+      if (idx >= 0) contacts[pid][idx] = { ...contacts[pid][idx], name, relationship: rel, phone };
+      closeModal();
+      render();
+      db(
+        "UPDATE health_contacts SET name = ?, relationship = ?, phone = ? WHERE id = ? AND household_id = current_setting('app.household_id', true)::uuid",
+        [name, rel, phone, contactId]
+      );
+    } else {
+      const id       = crypto.randomUUID();
+      const priority = (contacts[pid] ?? []).length + 1;
+      if (!contacts[pid]) contacts[pid] = [];
+      contacts[pid].push({ id, profile_id: pid, name, relationship: rel, phone, priority, created_at: now });
+      closeModal();
+      render();
+      db(
+        "INSERT INTO health_contacts (id, household_id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, current_setting('app.household_id', true)::uuid, ?, ?, ?, ?, ?, ?)",
+        [id, pid, name, rel, phone, priority, now]
+      );
+    }
+  } catch (e) {
+    console.error(e);
+  }
+};
+
+window.deleteContact = async function(contactId) {
+  const ok = await hubConfirm({ message: "Remove this contact?", confirmLabel: "Remove", destructive: true });
+  if (!ok) return;
+  const pid = profiles[selectedMemberId]?.id;
+  if (pid) contacts[pid] = (contacts[pid] ?? []).filter(c => c.id !== contactId);
+  render();
+  db("DELETE FROM health_contacts WHERE id = ? AND household_id = current_setting('app.household_id', true)::uuid", [contactId]);
+};
+
+// ── Print card ───────────────────────────────────────────────────────────────
+window.printCard = function() {
+  const member = members.find(m => m.id === selectedMemberId);
+  if (!member) return;
+
+  const pid = profiles[selectedMemberId]?.id;
+  const al  = pid ? (allergies[pid]   ?? []) : [];
+  const ml  = pid ? (medications[pid] ?? []) : [];
+  const cl  = pid ? (contacts[pid]    ?? []) : [];
+
+  // local escape for use inside the new window (no hub-sdk available there)
+  function e(s) {
+    return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  const allergyBlocks = al.map(a => `
+    <div class="entry">
+      <div class="entry-name">${e(a.name)} <span class="sev-tag sev-${e(a.severity)}">${SEV_LABEL[a.severity] ?? e(a.severity)}</span></div>
+      ${a.triggers       ? `<div class="entry-line"><strong>Triggers:</strong> ${e(a.triggers)}</div>` : ""}
+      ${a.symptoms       ? `<div class="entry-line"><strong>Reaction signs:</strong> ${e(a.symptoms)}</div>` : ""}
+      ${a.response_steps ? `<div class="entry-line"><strong>What to do:</strong><div class="steps">${e(a.response_steps).replace(/\n/g, "<br>")}</div></div>` : ""}
+    </div>`).join("");
+
+  const medBlocks = ml.map(m => `
+    <div class="entry">
+      <div class="entry-name">${e(m.name)} ${m.dose ? `<span class="dose-tag">${e(m.dose)}</span>` : ""}</div>
+      ${m.when_to_give ? `<div class="entry-line"><strong>When:</strong> ${e(m.when_to_give)}</div>` : ""}
+      ${m.location     ? `<div class="entry-line"><strong>Location:</strong> ${e(m.location)}</div>` : ""}
+      ${m.notes        ? `<div class="entry-line note">${e(m.notes)}</div>` : ""}
+    </div>`).join("");
+
+  const contactBlocks = cl.map((c, i) => `
+    <div class="contact-row">
+      <div class="contact-num">${i + 1}</div>
+      <div>
+        <div class="entry-name">${e(c.name)} ${c.relationship ? `<span class="rel-tag">${e(c.relationship)}</span>` : ""}</div>
+        ${c.phone ? `<div class="phone">${e(c.phone)}</div>` : ""}
+      </div>
+    </div>`).join("");
+
+  const printDate = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Health Card — ${e(member.name)}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; font-size: 13px; color: #111; padding: 28px; max-width: 700px; margin: 0 auto; }
+  .card-title { font-size: 22px; font-weight: 800; border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 6px; }
+  .card-meta { font-size: 11px; color: #777; margin-bottom: 22px; }
+  .section { margin-bottom: 20px; }
+  .section-title { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: #666; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-bottom: 10px; }
+  .entry { padding: 8px 0 8px 12px; border-left: 3px solid #ddd; margin-bottom: 10px; }
+  .entry-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .entry-line { font-size: 12px; color: #333; margin-top: 4px; line-height: 1.5; }
+  .steps { margin-top: 2px; white-space: pre-line; }
+  .note { font-style: italic; }
+  .sev-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; border-radius: 10px; }
+  .sev-mild { background: #d1fae5; color: #065f46; }
+  .sev-moderate { background: #fef3c7; color: #92400e; }
+  .sev-severe { background: #fed7aa; color: #9a3412; }
+  .sev-anaphylactic { background: #fee2e2; color: #991b1b; }
+  .dose-tag { font-size: 11px; font-weight: 400; color: #555; background: #f3f4f6; padding: 1px 6px; border-radius: 4px; }
+  .rel-tag { font-size: 11px; font-weight: 400; color: #666; }
+  .contact-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+  .contact-num { min-width: 22px; height: 22px; background: #111; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+  .phone { font-size: 15px; font-weight: 700; margin-top: 2px; }
+  .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 11px; color: #aaa; }
+  .print-btn { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #111; color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+  @media print { .print-btn { display: none; } body { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="card-title">Emergency Health Card — ${e(member.name)}</div>
+<div class="card-meta">Printed ${e(printDate)} · Keep with the child at all times</div>
+
+${al.length > 0 ? `<div class="section"><div class="section-title">⚠ Allergies</div>${allergyBlocks}</div>` : ""}
+${ml.length > 0 ? `<div class="section"><div class="section-title">Emergency Medications</div>${medBlocks}</div>` : ""}
+${cl.length > 0 ? `<div class="section"><div class="section-title">Emergency Contacts</div>${contactBlocks}</div>` : ""}
+${al.length === 0 && ml.length === 0 && cl.length === 0 ? "<p>No health information on file for this person.</p>" : ""}
+
+<div class="footer">Verify all information before distributing. Generated by your family health records.</div>
+<button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank");
+  if (win) { win.document.write(html); win.document.close(); }
+};
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+(async () => {
+  await loadMembers();
+  render();
+  await Promise.all(members.map(m => loadProfileData(m.id)));
+  render();
+})();
+</script>
+</body>
+</html>

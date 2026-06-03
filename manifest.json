@@ -1,0 +1,24 @@
+{
+  "id": "health-cards",
+  "name": "Health Cards",
+  "version": "1.0.0",
+  "description": "Allergy and emergency health information for every family member. Generate a printable card to share with parents, caregivers, or schools.",
+  "entrypoint": "index.html",
+  "runtime": "static",
+  "icon": "🏥",
+  "category": "health",
+  "tags": ["health", "allergies", "emergency", "medical", "kids"],
+  "storage": "db",
+  "data_access": {
+    "reads": ["family.members"],
+    "writes": []
+  },
+  "permissions": {
+    "default_audience": "adults",
+    "requires_approval": false
+  },
+  "nav": { "label": "Health Cards" },
+  "resource_limits": {
+    "max_db_bytes": 52428800
+  }
+}
