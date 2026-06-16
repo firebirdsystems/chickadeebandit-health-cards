@@ -1,6 +1,5 @@
-CREATE TABLE IF NOT EXISTS health_profiles (
+CREATE TABLE IF NOT EXISTS app_health_cards__health_profiles (
   id TEXT NOT NULL,
-  household_id UUID NOT NULL DEFAULT current_setting('app.household_id', true)::uuid,
   member_id TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
@@ -8,9 +7,8 @@ CREATE TABLE IF NOT EXISTS health_profiles (
   PRIMARY KEY (id)
 );
 
-CREATE TABLE IF NOT EXISTS health_allergies (
+CREATE TABLE IF NOT EXISTS app_health_cards__health_allergies (
   id TEXT NOT NULL,
-  household_id UUID NOT NULL DEFAULT current_setting('app.household_id', true)::uuid,
   profile_id TEXT NOT NULL,
   name TEXT NOT NULL,
   severity TEXT NOT NULL DEFAULT 'moderate',
@@ -22,9 +20,8 @@ CREATE TABLE IF NOT EXISTS health_allergies (
   PRIMARY KEY (id)
 );
 
-CREATE TABLE IF NOT EXISTS health_medications (
+CREATE TABLE IF NOT EXISTS app_health_cards__health_medications (
   id TEXT NOT NULL,
-  household_id UUID NOT NULL DEFAULT current_setting('app.household_id', true)::uuid,
   profile_id TEXT NOT NULL,
   name TEXT NOT NULL,
   dose TEXT NOT NULL DEFAULT '',
@@ -35,9 +32,8 @@ CREATE TABLE IF NOT EXISTS health_medications (
   PRIMARY KEY (id)
 );
 
-CREATE TABLE IF NOT EXISTS health_contacts (
+CREATE TABLE IF NOT EXISTS app_health_cards__health_contacts (
   id TEXT NOT NULL,
-  household_id UUID NOT NULL DEFAULT current_setting('app.household_id', true)::uuid,
   profile_id TEXT NOT NULL,
   name TEXT NOT NULL,
   relationship TEXT NOT NULL DEFAULT '',

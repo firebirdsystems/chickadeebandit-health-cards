@@ -270,7 +270,7 @@ async function loadProfileData(memberId) {
   }
 
   const profileRes = await db(
-    "SELECT * FROM health_profiles WHERE household_id = current_setting('app.household_id', true)::uuid AND member_id = ? LIMIT 1",
+    "SELECT * FROM app_health_cards__health_profiles WHERE member_id = ? LIMIT 1",
     [memberId]
   );
 
@@ -284,9 +284,9 @@ async function loadProfileData(memberId) {
   const pid = profile.id;
 
   const [ar, mr, cr] = await Promise.all([
-    db("SELECT * FROM health_allergies   WHERE household_id = current_setting('app.household_id', true)::uuid AND profile_id = ? ORDER BY sort_order, created_at", [pid]),
-    db("SELECT * FROM health_medications WHERE household_id = current_setting('app.household_id', true)::uuid AND profile_id = ? ORDER BY created_at", [pid]),
-    db("SELECT * FROM health_contacts    WHERE household_id = current_setting('app.household_id', true)::uuid AND profile_id = ? ORDER BY priority, created_at", [pid]),
+    db("SELECT * FROM app_health_cards__health_allergies WHERE profile_id = ? ORDER BY sort_order, created_at", [pid]),
+    db("SELECT * FROM app_health_cards__health_medications WHERE profile_id = ? ORDER BY created_at", [pid]),
+    db("SELECT * FROM app_health_cards__health_contacts WHERE profile_id = ? ORDER BY priority, created_at", [pid]),
   ]);
 
   allergies[pid]   = ar.rows;
@@ -299,7 +299,7 @@ async function ensureProfile(memberId) {
   const id  = crypto.randomUUID();
   const now = new Date().toISOString();
   await db(
-    "INSERT INTO health_profiles (id, household_id, member_id, notes, created_at, updated_at) VALUES (?, current_setting('app.household_id', true)::uuid, ?, '', ?, ?)",
+    "INSERT INTO app_health_cards__health_profiles (id, member_id, notes, created_at, updated_at) VALUES (?, ?, '', ?, ?)",
     [id, memberId, now, now]
   );
   profiles[memberId] = { id, member_id: memberId, notes: "" };
@@ -526,7 +526,7 @@ window.submitAllergyForm = async function(allergyId) {
       closeModal();
       render();
       db(
-        "UPDATE health_allergies SET name = ?, severity = ?, triggers = ?, symptoms = ?, response_steps = ? WHERE id = ? AND household_id = current_setting('app.household_id', true)::uuid",
+        "UPDATE app_health_cards__health_allergies SET name = ?, severity = ?, triggers = ?, symptoms = ?, response_steps = ? WHERE id = ?",
         [name, severity, triggers, symptoms, steps, allergyId]
       );
     } else {
@@ -537,7 +537,7 @@ window.submitAllergyForm = async function(allergyId) {
       closeModal();
       render();
       db(
-        "INSERT INTO health_allergies (id, household_id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, current_setting('app.household_id', true)::uuid, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [id, pid, name, severity, triggers, symptoms, steps, sort_order, now]
       );
     }
@@ -552,7 +552,7 @@ window.deleteAllergy = async function(allergyId) {
   const pid = profiles[selectedMemberId]?.id;
   if (pid) allergies[pid] = (allergies[pid] ?? []).filter(a => a.id !== allergyId);
   render();
-  db("DELETE FROM health_allergies WHERE id = ? AND household_id = current_setting('app.household_id', true)::uuid", [allergyId]);
+  db("DELETE FROM app_health_cards__health_allergies WHERE id = ?", [allergyId]);
 };
 
 // ── Medication CRUD ──────────────────────────────────────────────────────────
@@ -608,7 +608,7 @@ window.submitMedicationForm = async function(medId) {
       closeModal();
       render();
       db(
-        "UPDATE health_medications SET name = ?, dose = ?, when_to_give = ?, location = ?, notes = ? WHERE id = ? AND household_id = current_setting('app.household_id', true)::uuid",
+        "UPDATE app_health_cards__health_medications SET name = ?, dose = ?, when_to_give = ?, location = ?, notes = ? WHERE id = ?",
         [name, dose, when_to, location, notes, medId]
       );
     } else {
@@ -618,7 +618,7 @@ window.submitMedicationForm = async function(medId) {
       closeModal();
       render();
       db(
-        "INSERT INTO health_medications (id, household_id, profile_id, name, dose, when_to_give, location, notes, created_at) VALUES (?, current_setting('app.household_id', true)::uuid, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         [id, pid, name, dose, when_to, location, notes, now]
       );
     }
@@ -633,7 +633,7 @@ window.deleteMedication = async function(medId) {
   const pid = profiles[selectedMemberId]?.id;
   if (pid) medications[pid] = (medications[pid] ?? []).filter(m => m.id !== medId);
   render();
-  db("DELETE FROM health_medications WHERE id = ? AND household_id = current_setting('app.household_id', true)::uuid", [medId]);
+  db("DELETE FROM app_health_cards__health_medications WHERE id = ?", [medId]);
 };
 
 // ── Contact CRUD ─────────────────────────────────────────────────────────────
@@ -680,7 +680,7 @@ window.submitContactForm = async function(contactId) {
       closeModal();
       render();
       db(
-        "UPDATE health_contacts SET name = ?, relationship = ?, phone = ? WHERE id = ? AND household_id = current_setting('app.household_id', true)::uuid",
+        "UPDATE app_health_cards__health_contacts SET name = ?, relationship = ?, phone = ? WHERE id = ?",
         [name, rel, phone, contactId]
       );
     } else {
@@ -691,7 +691,7 @@ window.submitContactForm = async function(contactId) {
       closeModal();
       render();
       db(
-        "INSERT INTO health_contacts (id, household_id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, current_setting('app.household_id', true)::uuid, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         [id, pid, name, rel, phone, priority, now]
       );
     }
@@ -706,7 +706,7 @@ window.deleteContact = async function(contactId) {
   const pid = profiles[selectedMemberId]?.id;
   if (pid) contacts[pid] = (contacts[pid] ?? []).filter(c => c.id !== contactId);
   render();
-  db("DELETE FROM health_contacts WHERE id = ? AND household_id = current_setting('app.household_id', true)::uuid", [contactId]);
+  db("DELETE FROM app_health_cards__health_contacts WHERE id = ?", [contactId]);
 };
 
 // ── Print card ───────────────────────────────────────────────────────────────
