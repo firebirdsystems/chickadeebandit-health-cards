@@ -204,6 +204,10 @@ let contacts    = {};   // profile_id → contact[]
 let selectedMemberId = null;
 let modalEl = null;
 
+function isSafeId(value) {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,80}$/.test(value);
+}
+
 // ── DB helper ────────────────────────────────────────────────────────────────
 async function db(sql, params = []) {
   if (!DB) return { rows: [] };
@@ -280,6 +284,10 @@ async function loadProfileData(memberId) {
   }
 
   const profile = profileRes.rows[0];
+  if (!isSafeId(profile.id) || !isSafeId(profile.member_id)) {
+    profiles[memberId] = null;
+    return;
+  }
   profiles[memberId] = profile;
   const pid = profile.id;
 
@@ -289,9 +297,41 @@ async function loadProfileData(memberId) {
     db("SELECT * FROM app_health_cards__health_contacts WHERE profile_id = ? ORDER BY priority, created_at", [pid]),
   ]);
 
-  allergies[pid]   = ar.rows;
-  medications[pid] = mr.rows;
-  contacts[pid]    = cr.rows;
+  allergies[pid]   = (ar.rows ?? []).filter(r => isSafeId(r.id) && isSafeId(r.profile_id));
+  medications[pid] = (mr.rows ?? []).filter(r => isSafeId(r.id) && isSafeId(r.profile_id));
+  contacts[pid]    = (cr.rows ?? []).filter(r => isSafeId(r.id) && isSafeId(r.profile_id));
+}
+
+async function loadAllProfileData() {
+  if (!DB) {
+    await Promise.all(members.map(m => loadProfileData(m.id)));
+    return;
+  }
+
+  const [pr, ar, mr, cr] = await Promise.all([
+    db("SELECT * FROM app_health_cards__health_profiles ORDER BY created_at"),
+    db("SELECT * FROM app_health_cards__health_allergies ORDER BY profile_id, sort_order, created_at"),
+    db("SELECT * FROM app_health_cards__health_medications ORDER BY profile_id, created_at"),
+    db("SELECT * FROM app_health_cards__health_contacts ORDER BY profile_id, priority, created_at"),
+  ]);
+
+  profiles = Object.fromEntries(members.map(m => [m.id, null]));
+  allergies = {};
+  medications = {};
+  contacts = {};
+
+  for (const profile of pr.rows ?? []) {
+    if (isSafeId(profile.id) && isSafeId(profile.member_id)) profiles[profile.member_id] = profile;
+  }
+  for (const allergy of ar.rows ?? []) {
+    if (isSafeId(allergy.id) && isSafeId(allergy.profile_id)) (allergies[allergy.profile_id] ??= []).push(allergy);
+  }
+  for (const medication of mr.rows ?? []) {
+    if (isSafeId(medication.id) && isSafeId(medication.profile_id)) (medications[medication.profile_id] ??= []).push(medication);
+  }
+  for (const contact of cr.rows ?? []) {
+    if (isSafeId(contact.id) && isSafeId(contact.profile_id)) (contacts[contact.profile_id] ??= []).push(contact);
+  }
 }
 
 async function ensureProfile(memberId) {
@@ -721,12 +761,17 @@ window.printCard = function() {
 
   // local escape for use inside the new window (no hub-sdk available there)
   function e(s) {
-    return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   const allergyBlocks = al.map(a => `
     <div class="entry">
-      <div class="entry-name">${e(a.name)} <span class="sev-tag sev-${e(a.severity)}">${SEV_LABEL[a.severity] ?? e(a.severity)}</span></div>
+      <div class="entry-name">${e(a.name)} <span class="sev-tag ${SEV_CLASS[a.severity] ?? "sev-moderate"}">${SEV_LABEL[a.severity] ?? "Moderate"}</span></div>
       ${a.triggers       ? `<div class="entry-line"><strong>Triggers:</strong> ${e(a.triggers)}</div>` : ""}
       ${a.symptoms       ? `<div class="entry-line"><strong>Reaction signs:</strong> ${e(a.symptoms)}</div>` : ""}
       ${a.response_steps ? `<div class="entry-line"><strong>What to do:</strong><div class="steps">${e(a.response_steps).replace(/\n/g, "<br>")}</div></div>` : ""}
@@ -805,7 +850,7 @@ ${al.length === 0 && ml.length === 0 && cl.length === 0 ? "<p>No health informat
 (async () => {
   await loadMembers();
   render();
-  await Promise.all(members.map(m => loadProfileData(m.id)));
+  await loadAllProfileData();
   render();
 })();
 </script>

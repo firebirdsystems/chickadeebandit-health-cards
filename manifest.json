@@ -17,6 +17,12 @@
     "default_audience": "adults",
     "requires_approval": false
   },
+  "row_policies": {
+    "health_profiles": { "kind": "adult_only" },
+    "health_allergies": { "kind": "adult_only" },
+    "health_medications": { "kind": "adult_only" },
+    "health_contacts": { "kind": "adult_only" }
+  },
   "nav": { "label": "Health Cards" },
   "resource_limits": {
     "max_db_bytes": 52428800

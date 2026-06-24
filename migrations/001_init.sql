@@ -42,3 +42,15 @@ CREATE TABLE IF NOT EXISTS app_health_cards__health_contacts (
   created_at TEXT NOT NULL,
   PRIMARY KEY (id)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS health_profiles_member_idx
+  ON app_health_cards__health_profiles (member_id);
+
+CREATE INDEX IF NOT EXISTS health_allergies_profile_idx
+  ON app_health_cards__health_allergies (profile_id, sort_order, created_at);
+
+CREATE INDEX IF NOT EXISTS health_medications_profile_idx
+  ON app_health_cards__health_medications (profile_id, created_at);
+
+CREATE INDEX IF NOT EXISTS health_contacts_profile_idx
+  ON app_health_cards__health_contacts (profile_id, priority, created_at);
