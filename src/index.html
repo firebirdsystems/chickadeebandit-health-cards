@@ -190,6 +190,7 @@
 
 <script type="module">
 import { esc, memberColor, initial, hubConfirm } from "/hub-sdk.js";
+import { SEV_LABEL, SEV_CLASS, isSafeId, hasSevereAllergy, allergyCountLabel } from "./logic.js";
 
 const CONTEXT = window.__CONTEXT_URL ?? "";
 const DB      = window.__DB_URL      ?? "";
@@ -203,10 +204,6 @@ let contacts    = {};   // profile_id → contact[]
 
 let selectedMemberId = null;
 let modalEl = null;
-
-function isSafeId(value) {
-  return typeof value === "string" && /^[A-Za-z0-9_-]{1,80}$/.test(value);
-}
 
 // ── DB helper ────────────────────────────────────────────────────────────────
 async function db(sql, params = []) {
@@ -350,8 +347,6 @@ async function ensureProfile(memberId) {
 }
 
 // ── Severity helpers ─────────────────────────────────────────────────────────
-const SEV_LABEL = { mild: "Mild", moderate: "Moderate", severe: "Severe", anaphylactic: "Anaphylactic" };
-const SEV_CLASS = { mild: "sev-mild", moderate: "sev-moderate", severe: "sev-severe", anaphylactic: "sev-anaphylactic" };
 
 // ── Render ───────────────────────────────────────────────────────────────────
 function render() {
@@ -364,11 +359,11 @@ function renderList() {
     const profileLoaded = m.id in profiles;
     const pid = profiles[m.id]?.id;
     const al  = pid ? (allergies[pid] ?? []) : [];
-    const hasSevere = al.some(a => a.severity === "anaphylactic" || a.severity === "severe");
+    const hasSevere = hasSevereAllergy(al);
     const badge = !profileLoaded
       ? `<span class="allergy-badge badge-none">…</span>`
       : al.length > 0
-        ? `<span class="allergy-badge ${hasSevere ? "badge-urgent" : "badge-normal"}">${al.length} ${al.length === 1 ? "allergy" : "allergies"}</span>`
+        ? `<span class="allergy-badge ${hasSevere ? "badge-urgent" : "badge-normal"}">${allergyCountLabel(al.length)}</span>`
         : `<span class="allergy-badge badge-none">No allergies on file</span>`;
     const color = memberColor(m.id, members);
     return `
