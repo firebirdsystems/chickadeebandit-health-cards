@@ -1,5 +1,6 @@
 {
   "id": "health-cards",
+  "contexts": ["household", "shared_space"],
   "name": "Health Cards",
   "version": "1.0.0",
   "description": "Allergy and emergency health information for every family member. Generate a printable card to share with parents, caregivers, or schools.",
