@@ -44,6 +44,26 @@
       "audit_writes": true
     }
   },
+  "member_references": {
+    "health_profiles": {
+      "column": "member_id",
+      "on_removed": "delete",
+      "dependent_tables": [
+        {
+          "table": "health_allergies",
+          "foreign_key": "profile_id"
+        },
+        {
+          "table": "health_medications",
+          "foreign_key": "profile_id"
+        },
+        {
+          "table": "health_contacts",
+          "foreign_key": "profile_id"
+        }
+      ]
+    }
+  },
   "nav": {
     "label": "Health Cards"
   },
