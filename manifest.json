@@ -16,6 +16,12 @@
     "kids"
   ],
   "storage": "db",
+  "preload": {
+    "health_profiles": {"sql": "SELECT * FROM app_health_cards__health_profiles ORDER BY created_at"},
+    "health_allergies": {"sql": "SELECT * FROM app_health_cards__health_allergies ORDER BY profile_id, sort_order, created_at"},
+    "health_medications": {"sql": "SELECT * FROM app_health_cards__health_medications ORDER BY profile_id, created_at"},
+    "health_contacts": {"sql": "SELECT * FROM app_health_cards__health_contacts ORDER BY profile_id, priority, created_at"}
+  },
   "data_access": {
     "reads": [
       "family.members"
