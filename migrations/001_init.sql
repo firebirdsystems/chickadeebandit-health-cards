@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS app_health_cards__health_allergies (
   id TEXT NOT NULL,
   profile_id TEXT NOT NULL,
   name TEXT NOT NULL,
+  -- cb:plaintext-literal severity — a coarse triage default on rows that never set one; the column stays encrypted so a severity someone actually records is never stored in the clear
   severity TEXT NOT NULL DEFAULT 'moderate',
   triggers TEXT NOT NULL DEFAULT '',
   symptoms TEXT NOT NULL DEFAULT '',

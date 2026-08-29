@@ -1,6 +1,6 @@
 {
   "name": "chickadee-health-cards",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Allergy and emergency health cards for Chickadee Bandit",
   "type": "module",
   "scripts": {
