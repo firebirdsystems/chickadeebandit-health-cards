@@ -204,6 +204,8 @@ let contacts    = {};   // profile_id → contact[]
 
 let selectedMemberId = null;
 let modalEl = null;
+// Set when the hub refuses the reads outright (see loadAllProfileData).
+let accessDenied = false;
 
 // ── DB helper ────────────────────────────────────────────────────────────────
 async function db(sql, params = []) {
@@ -312,6 +314,18 @@ async function loadAllProfileData() {
     db("SELECT * FROM app_health_cards__health_contacts ORDER BY profile_id, priority, created_at"),
   ]);
 
+  // A refusal comes back as {error}, not as rows, and `rows ?? []` below would
+  // render it as "no health information on file for anyone" — a different and
+  // dangerously reassuring statement. Every table here is `adult_only`, so the
+  // hub refuses even the SELECT for a non-adult. The app's audience is `adults`
+  // and normally nobody else gets this far, but an admin can grant a member
+  // access individually ("Granted" in the hub's Member access panel), which is
+  // checked BEFORE the audience rule.
+  if (pr.error || ar.error || mr.error || cr.error) {
+    accessDenied = true;
+    return;
+  }
+
   profiles = Object.fromEntries(members.map(m => [m.id, null]));
   allergies = {};
   medications = {};
@@ -355,6 +369,17 @@ function render() {
 }
 
 function renderList() {
+  if (accessDenied) {
+    document.getElementById("app").innerHTML = `
+      <div class="container">
+        <div class="page-header">
+          <h1>Health Cards</h1>
+          <p class="subtitle">Allergy &amp; emergency information for your family</p>
+        </div>
+        <p class="empty-text">Health cards are kept to the adults in this household.</p>
+      </div>`;
+    return;
+  }
   const cards = members.map(m => {
     const profileLoaded = m.id in profiles;
     const pid = profiles[m.id]?.id;
