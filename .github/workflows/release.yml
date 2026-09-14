@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Run tests
         run: npm ci && npm test
@@ -50,7 +50,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Install contract runner (vitest + better-sqlite3 only)
         working-directory: hub/packages/hub/contract-ci
         run: npm ci --no-audit --no-fund
@@ -71,7 +71,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Set version
         id: version
