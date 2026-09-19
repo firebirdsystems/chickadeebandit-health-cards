@@ -51,7 +51,7 @@
     .allergy-badge {
       padding: 3px 10px; border-radius: 20px; font-size: 0.78rem; font-weight: 600; flex-shrink: 0;
     }
-    .badge-urgent  { background: #fef2f2; color: #dc2626; }
+    .badge-urgent  { background: var(--hub-bg, #fef2f2); color: #dc2626; }
     .badge-normal  { background: #fef9c3; color: #92400e; }
     .badge-none    { background: var(--hub-border, #e5e7eb); color: var(--hub-text-muted, #6b7280); }
     .chevron { color: var(--hub-text-muted, #9ca3af); font-size: 1.3rem; }
@@ -104,10 +104,10 @@
       font-size: 0.7rem; font-weight: 700; padding: 2px 8px;
       border-radius: 12px; text-transform: uppercase; letter-spacing: 0.04em;
     }
-    .sev-mild         { background: #d1fae5; color: #065f46; }
-    .sev-moderate     { background: #fef3c7; color: #92400e; }
+    .sev-mild         { background: var(--hub-tint-success, #d1fae5); color: var(--hub-tint-success-fg, #065f46); }
+    .sev-moderate     { background: var(--hub-tint-warning, #fef3c7); color: var(--hub-tint-warning-fg, #92400e); }
     .sev-severe       { background: #fed7aa; color: #9a3412; }
-    .sev-anaphylactic { background: #fee2e2; color: #991b1b; }
+    .sev-anaphylactic { background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #991b1b); }
 
     /* Contact specifics */
     .contact-priority {
@@ -139,7 +139,7 @@
       border: 1px dashed var(--hub-primary, #4f46e5);
       border-radius: 8px; padding: 5px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer;
     }
-    .btn-add:hover { background: #eff6ff; }
+    .btn-add:hover { background: var(--hub-tint-info, #eff6ff); }
     .btn-icon {
       background: none; border: 1px solid var(--hub-border, #e5e7eb);
       border-radius: 6px; padding: 3px 10px; font-size: 0.78rem;
@@ -147,7 +147,7 @@
     }
     .btn-icon:hover { background: var(--hub-bg, #f3f4f6); }
     .btn-danger { color: #dc2626; border-color: #fecaca; }
-    .btn-danger:hover { background: #fef2f2; }
+    .btn-danger:hover { background: var(--hub-bg, #fef2f2); }
 
     /* Modal */
     .modal-backdrop {
@@ -823,23 +823,23 @@ window.printCard = function() {
 <title>Health Card — ${e(member.name)}</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; font-size: 13px; color: #111; padding: 28px; max-width: 700px; margin: 0 auto; }
+  body { font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; font-size: 13px; color: var(--hub-text, #111); padding: 28px; max-width: 700px; margin: 0 auto; }
   .card-title { font-size: 22px; font-weight: 800; border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 6px; }
-  .card-meta { font-size: 11px; color: #777; margin-bottom: 22px; }
+  .card-meta { font-size: 11px; color: var(--hub-text-muted, #777); margin-bottom: 22px; }
   .section { margin-bottom: 20px; }
-  .section-title { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: #666; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-bottom: 10px; }
+  .section-title { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--hub-text-muted, #666); border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-bottom: 10px; }
   .entry { padding: 8px 0 8px 12px; border-left: 3px solid #ddd; margin-bottom: 10px; }
   .entry-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .entry-line { font-size: 12px; color: #333; margin-top: 4px; line-height: 1.5; }
+  .entry-line { font-size: 12px; color: var(--hub-text, #333); margin-top: 4px; line-height: 1.5; }
   .steps { margin-top: 2px; white-space: pre-line; }
   .note { font-style: italic; }
   .sev-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; border-radius: 10px; }
-  .sev-mild { background: #d1fae5; color: #065f46; }
-  .sev-moderate { background: #fef3c7; color: #92400e; }
+  .sev-mild { background: var(--hub-tint-success, #d1fae5); color: var(--hub-tint-success-fg, #065f46); }
+  .sev-moderate { background: var(--hub-tint-warning, #fef3c7); color: var(--hub-tint-warning-fg, #92400e); }
   .sev-severe { background: #fed7aa; color: #9a3412; }
-  .sev-anaphylactic { background: #fee2e2; color: #991b1b; }
-  .dose-tag { font-size: 11px; font-weight: 400; color: #555; background: #f3f4f6; padding: 1px 6px; border-radius: 4px; }
-  .rel-tag { font-size: 11px; font-weight: 400; color: #666; }
+  .sev-anaphylactic { background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #991b1b); }
+  .dose-tag { font-size: 11px; font-weight: 400; color: var(--hub-text-muted, #555); background: var(--hub-bg, #f3f4f6); padding: 1px 6px; border-radius: 4px; }
+  .rel-tag { font-size: 11px; font-weight: 400; color: var(--hub-text-muted, #666); }
   .contact-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
   .contact-num { min-width: 22px; height: 22px; background: #111; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
   .phone { font-size: 15px; font-weight: 700; margin-top: 2px; }
