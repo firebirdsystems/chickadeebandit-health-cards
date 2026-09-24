@@ -1,0 +1,240 @@
+{
+  "scenarios": [
+    {
+      "name": "health profiles and their allergy/medication/contact rows are adults-only: a child cannot read or write them, an adult can",
+      "members": {
+        "parent": "adult",
+        "kid": "child"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__health_profiles (id, member_id, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+          "params": [
+            "hp1",
+            "{{kid}}",
+            "Carries an EpiPen",
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
+          "params": [
+            "al1",
+            "hp1",
+            "Peanuts",
+            "severe",
+            "nuts",
+            "hives",
+            "EpiPen then 911",
+            "2026-01-01T00:00:00Z"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": [
+            "md1",
+            "hp1",
+            "Epinephrine",
+            "0.15mg",
+            "anaphylaxis",
+            "backpack",
+            "check expiry",
+            "2026-01-01T00:00:00Z"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
+          "params": [
+            "ct1",
+            "hp1",
+            "Dr. Smith",
+            "pediatrician",
+            "555-0100",
+            "2026-01-01T00:00:00Z"
+          ]
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id FROM app_health_cards__health_profiles",
+          "expect": {
+            "status": 403
+          }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id FROM app_health_cards__health_allergies",
+          "expect": {
+            "status": 403
+          }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id FROM app_health_cards__health_medications",
+          "expect": {
+            "status": 403
+          }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id FROM app_health_cards__health_contacts",
+          "expect": {
+            "status": 403
+          }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
+          "params": [
+            "al2",
+            "hp1",
+            "Bees",
+            "mild",
+            "stings",
+            "swelling",
+            "ice",
+            "2026-01-02T00:00:00Z"
+          ],
+          "expect": {
+            "status": 403
+          }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "SELECT id FROM app_health_cards__health_profiles",
+          "expect": {
+            "status": 200,
+            "rowCount": 1,
+            "rowsContain": [
+              {
+                "id": "hp1"
+              }
+            ]
+          }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "SELECT id, name FROM app_health_cards__health_allergies",
+          "expect": {
+            "status": 200,
+            "rowCount": 1,
+            "rowsContain": [
+              {
+                "id": "al1",
+                "name": "Peanuts"
+              }
+            ]
+          }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, ?, ?, ?, ?, 2, ?)",
+          "params": [
+            "ct2",
+            "hp1",
+            "Grandma",
+            "grandparent",
+            "555-0101",
+            "2026-01-02T00:00:00Z"
+          ],
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "SELECT id FROM app_health_cards__health_contacts",
+          "expect": {
+            "status": 200,
+            "rowCount": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "one health profile per member: a second profile for the same member is rejected, a profile for another member is not",
+      "members": {
+        "parent": "adult",
+        "kid": "child"
+      },
+      "steps": [
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_health_cards__health_profiles (id, member_id, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+          "params": [
+            "hp1",
+            "{{kid}}",
+            "Asthma",
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z"
+          ],
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_health_cards__health_profiles (id, member_id, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+          "params": [
+            "hp2",
+            "{{kid}}",
+            "Duplicate",
+            "2026-01-02T00:00:00Z",
+            "2026-01-02T00:00:00Z"
+          ],
+          "expect": {
+            "status": 400,
+            "errorIncludes": "UNIQUE"
+          }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_health_cards__health_profiles (id, member_id, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+          "params": [
+            "hp3",
+            "{{parent}}",
+            "None known",
+            "2026-01-02T00:00:00Z",
+            "2026-01-02T00:00:00Z"
+          ],
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "SELECT id FROM app_health_cards__health_profiles ORDER BY id",
+          "expect": {
+            "status": 200,
+            "rowCount": 2,
+            "rowsContain": [
+              {
+                "id": "hp1"
+              },
+              {
+                "id": "hp3"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
