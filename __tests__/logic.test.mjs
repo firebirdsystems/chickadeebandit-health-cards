@@ -51,3 +51,53 @@ describe("severity accessors", () => {
     expect(SEV_CLASS.anaphylactic).toBe("sev-anaphylactic");
   });
 });
+
+import { cardNameFor, cardNameUpdates, profileInsert } from "../src/logic.js";
+
+describe("card name", () => {
+  it("is the member's trimmed display name, or null", () => {
+    expect(cardNameFor({ name: "  Emma " })).toBe("Emma");
+    expect(cardNameFor({ name: "   " })).toBeNull();
+    expect(cardNameFor({ name: "" })).toBeNull();
+    expect(cardNameFor({})).toBeNull();
+    expect(cardNameFor(null)).toBeNull();
+  });
+
+  it("updates only profiles whose name changed, never to an empty name", () => {
+    const members = [
+      { id: "m1", name: "Emma" },
+      { id: "m2", name: "Liam B." },
+      { id: "m3", name: "" },
+      { id: "m4", name: "Noah" },
+      { id: "m5", name: "Ava" },
+    ];
+    const profiles = {
+      m1: { id: "p1", card_name: "Emma" },
+      m2: { id: "p2", card_name: "Liam" },
+      m3: { id: "p3", card_name: "Old" },
+      m4: null,
+      m5: { id: "p5", card_name: "" },
+    };
+    expect(cardNameUpdates(profiles, members)).toEqual([
+      { id: "p2", cardName: "Liam B." },
+      { id: "p5", cardName: "Ava" },
+    ]);
+  });
+
+  it("skips a profile with an unsafe id", () => {
+    expect(cardNameUpdates({ m1: { id: "p 1", card_name: "" } }, [{ id: "m1", name: "Emma" }])).toEqual([]);
+  });
+
+  it("stores the name on a new profile, and never binds an empty string", () => {
+    const named = profileInsert("p1", { id: "m1", name: " Emma " }, "T");
+    expect(named.params).toEqual(["p1", "m1", "Emma", "T", "T"]);
+    expect(named.sql).toMatch(/\(id, member_id, notes, card_name, created_at, updated_at\) VALUES \(\?, \?, '', \?, \?, \?\)/);
+    expect(named.cardName).toBe("Emma");
+
+    const unnamed = profileInsert("p2", { id: "m2", name: "" }, "T");
+    expect(unnamed.params).toEqual(["p2", "m2", "T", "T"]);
+    expect(unnamed.sql).not.toContain("card_name");
+    expect(unnamed.cardName).toBeNull();
+    for (const p of [...named.params, ...unnamed.params]) expect(p).not.toBe("");
+  });
+});

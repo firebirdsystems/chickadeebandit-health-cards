@@ -70,6 +70,7 @@
     .detail-member { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
     .detail-name { font-size: 1.2rem; font-weight: 700; }
     .detail-role { font-size: 0.8rem; color: var(--hub-text-muted, #6b7280); text-transform: capitalize; }
+    .detail-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
     /* Sections */
     .section { margin-bottom: 24px; }
@@ -189,12 +190,47 @@
 </div>
 
 <script type="module">
-import { esc, memberColor, initial, hubConfirm } from "/hub-sdk.js";
-import { SEV_LABEL, SEV_CLASS, isSafeId, hasSevereAllergy, allergyCountLabel } from "./logic.js";
+import {
+  esc, memberColor, initial, hubConfirm,
+  createShareHelper, activeShareLinks, SHARE_EXPIRY_CHOICES, DEFAULT_SHARE_EXPIRY_HOURS,
+} from "/hub-sdk.js";
+import {
+  SEV_LABEL, SEV_CLASS, isSafeId, hasSevereAllergy, allergyCountLabel,
+  cardNameUpdates, profileInsert,
+} from "./logic.js";
+import { createShareUi, createOverlayView } from "./share.js";
 
 const CONTEXT = window.__CONTEXT_URL ?? "";
 const DB      = window.__DB_URL      ?? "";
 const APP_ID  = window.__APP_ID      ?? "health-cards";
+const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
+const IS_ADMIN   = window.__IS_ADMIN === true;
+
+// External share links (manifest.shareable.card): a read-only page of one
+// member's allergies, medications and emergency contacts, for a babysitter or
+// coach. This is health information every adult here can read and edit, so
+// the manifest lets only household admins mint (`mint_roles: "admin"`, a 403
+// for anyone else) and the button is hidden for everyone else to match.
+const share = createShareHelper(window.__SHARE_CREATE_URL, window.__SHARE_REVOKE_URL, window.__SHARE_LIST_URL);
+const CAN_SHARE = share.enabled && IS_ADMIN;
+const shareView = createOverlayView(document);
+const shareUi = createShareUi({
+  share,
+  itemType: "card",
+  noun: "card",
+  scopeHtml: (item) => `The page shows ${esc(item.title)}’s allergies and what to do, their medications with the dose and where they’re kept, and their emergency contacts’ phone numbers. Anyone with the link can read it, so send it only to the person looking after them, and pick the shortest expiry that covers the visit. Changes you make here show up on the page straight away.`,
+  esc,
+  confirm: (message, opts) => hubConfirm({ message, ...opts, destructive: true }),
+  writeText: (text) => navigator.clipboard.writeText(text),
+  activeLinks: activeShareLinks,
+  expiryChoices: SHARE_EXPIRY_CHOICES,
+  defaultExpiryHours: DEFAULT_SHARE_EXPIRY_HOURS,
+  getMe: () => HUB_MEMBER,
+  isAdmin: () => IS_ADMIN,
+  memberName: (id) => members.find(m => m.id === id)?.name ?? "",
+  view: shareView,
+});
+shareView.bind(shareUi);
 
 let members     = [];
 let profiles    = {};   // member_id  → profile row | null
@@ -349,15 +385,32 @@ async function ensureProfile(memberId) {
   if (profiles[memberId]) return profiles[memberId];
   const id  = crypto.randomUUID();
   const now = new Date().toISOString();
-  await db(
-    "INSERT INTO app_health_cards__health_profiles (id, member_id, notes, created_at, updated_at) VALUES (?, ?, '', ?, ?)",
-    [id, memberId, now, now]
-  );
-  profiles[memberId] = { id, member_id: memberId, notes: "" };
+  const member = members.find(m => m.id === memberId) ?? { id: memberId };
+  const insert = profileInsert(id, member, now);
+  await db(insert.sql, insert.params);
+  profiles[memberId] = { id, member_id: memberId, notes: "", card_name: insert.cardName ?? "" };
   allergies[id]   = [];
   medications[id] = [];
   contacts[id]    = [];
   return profiles[memberId];
+}
+
+/**
+ * Copies each member's current display name onto their profile's `card_name`,
+ * the share page's title, wherever it differs. The hub renames members, not
+ * this app, so this is how a rename reaches a shared card. Best-effort: a
+ * failed write leaves the old name and is retried on the next load.
+ */
+async function refreshCardNames(only) {
+  if (!DB || accessDenied) return;
+  const updates = cardNameUpdates(profiles, only ? members.filter(m => m.id === only) : members);
+  await Promise.all(updates.map(async ({ id, cardName }) => {
+    const res = await db("UPDATE app_health_cards__health_profiles SET card_name = ? WHERE id = ?", [cardName, id])
+      .catch(() => null);
+    if (!res || res.error) return;
+    const profile = Object.values(profiles).find(p => p?.id === id);
+    if (profile) profile.card_name = cardName;
+  }));
 }
 
 // ── Severity helpers ─────────────────────────────────────────────────────────
@@ -486,7 +539,10 @@ function renderDetail() {
             <div class="detail-role">${esc(member.role)}</div>
           </div>
         </div>
-        <button class="btn-primary" onclick="printCard()">Print Card</button>
+        <div class="detail-actions">
+          ${CAN_SHARE && pid ? `<button class="btn-secondary" onclick="shareCard()" data-testid="card-share">Share</button>` : ""}
+          <button class="btn-primary" onclick="printCard()">Print Card</button>
+        </div>
       </div>
 
       <section class="section">
@@ -517,6 +573,17 @@ function renderDetail() {
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 window.goBack = () => { selectedMemberId = null; render(); };
+
+// The page's title is `card_name`, so bring it up to date before a link to it
+// exists — a profile that has never been refreshed would otherwise share a
+// card with no name on it.
+window.shareCard = async function() {
+  const member = members.find(m => m.id === selectedMemberId);
+  const profile = profiles[selectedMemberId];
+  if (!CAN_SHARE || !member || !profile) return;
+  await refreshCardNames(member.id);
+  shareUi.open({ id: profile.id, title: member.name });
+};
 
 window.selectMember = async function(memberId) {
   selectedMemberId = memberId;
@@ -872,6 +939,7 @@ ${al.length === 0 && ml.length === 0 && cl.length === 0 ? "<p>No health informat
   render();
   await loadAllProfileData();
   render();
+  await refreshCardNames();
 })();
 </script>
 </body>

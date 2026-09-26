@@ -16,6 +16,7 @@
     "kids"
   ],
   "storage": "db",
+  "db_plaintext_columns": ["priority"],
   "preload": {
     "health_profiles": {"sql": "SELECT * FROM app_health_cards__health_profiles ORDER BY created_at"},
     "health_allergies": {"sql": "SELECT * FROM app_health_cards__health_allergies ORDER BY profile_id, sort_order, created_at"},
@@ -66,6 +67,65 @@
         {
           "table": "health_contacts",
           "foreign_key": "profile_id"
+        }
+      ]
+    }
+  },
+  "shareable": {
+    "card": {
+      "table": "health_profiles",
+      "title_column": "card_name",
+      "columns": [],
+      "mint_roles": "admin",
+      "feeds": [
+        {
+          "label": "Allergies",
+          "table": "health_allergies",
+          "fk_column": "profile_id",
+          "columns": [
+            { "column": "name", "label": "Allergy", "role": "heading" },
+            {
+              "column": "severity", "label": "Severity", "role": "detail",
+              "value_labels": { "mild": "Mild", "moderate": "Moderate", "severe": "Severe", "anaphylactic": "Anaphylactic" }
+            },
+            { "column": "triggers", "label": "Triggers", "role": "detail" },
+            { "column": "symptoms", "label": "Symptoms", "format": "multiline", "role": "body" },
+            { "column": "response_steps", "label": "What to do", "format": "multiline", "role": "body" }
+          ],
+          "order_column": "sort_order",
+          "order": "oldest",
+          "max_items": 50,
+          "empty_text": "No allergies recorded."
+        },
+        {
+          "label": "Medications",
+          "table": "health_medications",
+          "fk_column": "profile_id",
+          "columns": [
+            { "column": "name", "label": "Medication", "role": "heading" },
+            { "column": "dose", "label": "Dose", "role": "detail" },
+            { "column": "location", "label": "Kept", "role": "detail" },
+            { "column": "when_to_give", "label": "When to give", "format": "multiline", "role": "body" },
+            { "column": "notes", "label": "Notes", "format": "multiline", "role": "body" }
+          ],
+          "order_column": "created_at",
+          "order": "oldest",
+          "max_items": 50,
+          "empty_text": "No medications recorded."
+        },
+        {
+          "label": "Emergency contacts",
+          "table": "health_contacts",
+          "fk_column": "profile_id",
+          "columns": [
+            { "column": "name", "label": "Name", "role": "heading" },
+            { "column": "relationship", "label": "Relationship", "role": "detail" },
+            { "column": "phone", "label": "Phone", "format": "tel", "role": "detail" }
+          ],
+          "order_column": "priority",
+          "order": "oldest",
+          "max_items": 20,
+          "empty_text": "No emergency contacts recorded."
         }
       ]
     }
