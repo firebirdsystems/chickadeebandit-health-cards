@@ -8,7 +8,8 @@
  * owns the DOM — so the sequencing below can be tested in Node without a
  * browser. The same file ships in every app with a share panel (notes,
  * routines, trip-planner, announcements, board-minutes, document-library,
- * kids-activities, milestones); keep the copies identical.
+ * kids-activities, milestones, health-cards, timetable, carpool); keep the
+ * copies identical.
  *
  * The sequencing is the part worth having here rather than inline:
  *   - two reads of the link list can be in flight at once (open's, and the one
@@ -37,6 +38,10 @@
  * @param deps.isAdmin        () => boolean — admins may revoke anyone's link
  * @param deps.memberName     (id) => display name, for links another adult made
  * @param deps.view           { show(), render(html), hide() }
+ * @param deps.calendarUrl    optional — share.calendarUrl from the hub SDK, for
+ *                            an item type that declares a calendar. A link it
+ *                            returns a url for gets a "Copy calendar link"
+ *                            button; omit it and the panel is page-only.
  */
 export function createShareUi(deps) {
   /** { id, title } of the item the open panel is for, or null when closed. */
@@ -55,6 +60,12 @@ export function createShareUi(deps) {
   let error = "";
   let notice = "";
   let expiry = deps.defaultExpiryHours;
+
+  /** The link's calendar subscription url, or null (no calendar declared, or a
+   *  password link, which serves no feed). */
+  function calendarUrlOf(link) {
+    return deps.calendarUrl ? deps.calendarUrl(link) : null;
+  }
 
   function pin() {
     const s = session;
@@ -93,6 +104,7 @@ export function createShareUi(deps) {
 
     const rows = active.map((l) => {
       const mine = l.createdBy === me?.id;
+      const calendar = calendarUrlOf(l);
       const by = mine ? "" : ` · shared by ${esc(deps.memberName(l.createdBy) || "another adult")}`;
       return `
       <div class="share-row" data-testid="share-row">
@@ -102,6 +114,7 @@ export function createShareUi(deps) {
         </div>
         <div class="share-row-actions">
           <button type="button" class="share-btn" data-share-action="copy" data-link-id="${esc(l.id)}">Copy</button>
+          ${calendar ? `<button type="button" class="share-btn" data-share-action="copy-calendar" data-link-id="${esc(l.id)}" data-testid="share-copy-calendar">Copy calendar link</button>` : ""}
           ${mine || admin ? `<button type="button" class="share-btn share-btn-danger" data-share-action="revoke" data-link-id="${esc(l.id)}">Revoke</button>` : ""}
         </div>
       </div>`;
@@ -126,6 +139,10 @@ export function createShareUi(deps) {
       their own, and you can revoke one at any time.
     </p>
     ${scope ? `<p class="share-scope">${scope}</p>` : ""}
+    ${active.some(calendarUrlOf) ? `<p class="share-scope" data-testid="share-calendar-note">A link with a calendar
+      link also works as a calendar subscription: paste the calendar link into Google, Apple or Outlook Calendar. It
+      stops updating when the link expires. After you revoke a link, a calendar app can keep showing its events until
+      its next refresh, which can take a few hours.</p>` : ""}
     ${error ? `<p class="share-error" role="alert" data-testid="share-error">${esc(error)}</p>` : ""}
     ${notice ? `<p class="share-notice" role="status" data-testid="share-notice">${esc(notice)}</p>` : ""}
     ${body}
@@ -184,6 +201,7 @@ export function createShareUi(deps) {
         links = [...links, {
           id: link.id, url: link.url, itemId: item.id, createdBy: deps.getMe()?.id,
           expiresAt: link.expiresAt, revokedAt: null, viewCount: 0,
+          ...(link.calendarUrl ? { calendarUrl: link.calendarUrl } : {}),
         }];
         error = "Link created, but the list of links couldn’t be refreshed.";
       }
@@ -205,19 +223,24 @@ export function createShareUi(deps) {
     }
   }
 
-  async function copy(linkId) {
+  async function copy(linkId, kind = "page") {
     const link = links.find((l) => l.id === linkId);
     if (!link) return;
+    const text = kind === "calendar" ? calendarUrlOf(link) : link.url;
+    if (!text) return;
     const still = pin();
     try {
-      await deps.writeText(link.url);
+      await deps.writeText(text);
       if (!still()) return;
       error = "";
-      notice = "Link copied.";
+      notice = kind === "calendar" ? "Calendar link copied." : "Link copied.";
     } catch {
       if (!still()) return;
       notice = "";
-      error = "Couldn’t copy. Select the link text instead.";
+      // The calendar link has no field on screen to select, so say it here.
+      error = kind === "calendar"
+        ? `Couldn’t copy. The calendar link is ${text}`
+        : "Couldn’t copy. Select the link text instead.";
     }
     render();
   }
@@ -254,6 +277,7 @@ export function createShareUi(deps) {
     const { shareAction, linkId } = el.dataset;
     if (shareAction === "create") create();
     else if (shareAction === "copy") copy(linkId);
+    else if (shareAction === "copy-calendar") copy(linkId, "calendar");
     else if (shareAction === "revoke") revoke(linkId);
     else if (shareAction === "close") close();
   }

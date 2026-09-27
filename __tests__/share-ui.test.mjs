@@ -41,7 +41,11 @@ const flush = async (n = 10) => { for (let i = 0; i < n; i++) await Promise.reso
 const ok = (links) => ({ enabled: true, entitled: true, bundle: null, limits: { maxActive: 100 }, links });
 const refused = () => ({ enabled: true, entitled: false, bundle: null, limits: null, links: [] });
 
-function harness({ lists = [ok([])], admin = false, confirm = true, create, writeText } = {}) {
+/** Same shape as the SDK's shareCalendarUrl (tested in the hub). */
+const calendarUrl = (l) => (typeof l?.calendarUrl === "string" && /^https?:\/\//.test(l.calendarUrl)
+  ? l.calendarUrl.replace(/^https?:\/\//, "webcal://") : null);
+
+function harness({ lists = [ok([])], admin = false, confirm = true, create, writeText, calendar = false } = {}) {
   const queue = [...lists];
   const share = {
     enabled: true,
@@ -68,6 +72,7 @@ function harness({ lists = [ok([])], admin = false, confirm = true, create, writ
     isAdmin: () => admin,
     memberName: (id) => ({ "adult-2": "Morgan" }[id] ?? ""),
     view,
+    ...(calendar ? { calendarUrl } : {}),
   });
   return { ui, share, view, push: (l) => queue.push(l) };
 }
@@ -244,6 +249,70 @@ describe("share panel", () => {
     expect(h.view.html).not.toContain(`" onclick="bad`);
   });
 
+  it("offers a calendar link only on links that serve one, and copies it in webcal form", async () => {
+    const writeText = vi.fn(async () => {});
+    const h = harness({
+      calendar: true,
+      writeText,
+      lists: [ok([
+        link({ calendarUrl: "https://hub.example/api/share/abc/calendar.ics" }),
+        // A password link serves no feed, so the hub sends no calendarUrl.
+        link({ id: "link-pw", url: "https://hub.example/share/pw" }),
+      ])],
+    });
+    await h.ui.open({ id: "item-1", title: "Soccer" });
+    expect(h.view.html).toContain('data-testid="share-calendar-note"');
+    expect(h.view.html.match(/data-share-action="copy-calendar"/g)).toHaveLength(1);
+    expect(h.view.html).toContain('data-share-action="copy-calendar" data-link-id="link-1"');
+    await h.ui.copy("link-1", "calendar");
+    expect(writeText).toHaveBeenCalledWith("webcal://hub.example/api/share/abc/calendar.ics");
+    expect(h.view.html).toContain("Calendar link copied.");
+    writeText.mockClear();
+    await h.ui.copy("link-pw", "calendar");
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it("says the calendar link out loud when the clipboard refuses it", async () => {
+    const h = harness({
+      calendar: true,
+      writeText: vi.fn(async () => { throw new Error("denied"); }),
+      lists: [ok([link({ calendarUrl: "https://hub.example/api/share/abc/calendar.ics" })])],
+    });
+    await h.ui.open({ id: "item-1", title: "Soccer" });
+    await h.ui.copy("link-1", "calendar");
+    expect(h.view.html).toContain("The calendar link is webcal://hub.example/api/share/abc/calendar.ics");
+  });
+
+  it("keeps the calendar link when a mint's follow-up read fails", async () => {
+    const h = harness({
+      calendar: true,
+      lists: [ok([]), refused()],
+      create: vi.fn(async () => ({
+        id: "link-new", url: "https://hub.example/share/new", expiresAt: LATER,
+        calendarUrl: "https://hub.example/api/share/new/calendar.ics",
+      })),
+    });
+    await h.ui.open({ id: "item-1", title: "Soccer" });
+    await h.ui.create();
+    expect(h.view.html).toContain('data-share-action="copy-calendar" data-link-id="link-new"');
+  });
+
+  // The hub leaves calendarUrl off every link while the plan has lapsed (the
+  // feed would 404), so the note must not promise a subscription then.
+  it("shows no calendar note when no live link serves a feed", async () => {
+    const h = harness({ calendar: true, lists: [ok([link()])] });
+    await h.ui.open({ id: "item-1", title: "Soccer" });
+    expect(h.view.html).not.toContain("share-calendar-note");
+    expect(h.view.html).not.toContain("copy-calendar");
+  });
+
+  it("shows no calendar row or note on a page-only panel", async () => {
+    const h = harness({ lists: [ok([link({ calendarUrl: "https://hub.example/api/share/abc/calendar.ics" })])] });
+    await h.ui.open({ id: "item-1", title: "Wifi" });
+    expect(h.view.html).not.toContain("copy-calendar");
+    expect(h.view.html).not.toContain("share-calendar-note");
+  });
+
   it("routes delegated clicks by data attribute", async () => {
     const h = harness({ lists: [ok([link()])] });
     await h.ui.open({ id: "item-1", title: "Wifi" });
@@ -251,6 +320,11 @@ describe("share panel", () => {
     click({ shareAction: "copy", linkId: "link-1" });
     await flush();
     expect(h.view.html).toContain("Link copied.");
+    const cal = harness({ calendar: true, lists: [ok([link({ calendarUrl: "https://hub.example/api/share/abc/calendar.ics" })])] });
+    await cal.ui.open({ id: "item-1", title: "Soccer" });
+    cal.ui.handleClick({ target: { closest: () => ({ dataset: { shareAction: "copy-calendar", linkId: "link-1" } }) } });
+    await flush();
+    expect(cal.view.html).toContain("Calendar link copied.");
     click({ shareAction: "close" });
     expect(h.ui.isOpen()).toBe(false);
   });
