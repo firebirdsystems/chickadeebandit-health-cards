@@ -192,7 +192,7 @@
 <script type="module">
 import {
   esc, memberColor, initial, hubConfirm,
-  createShareHelper, activeShareLinks, SHARE_EXPIRY_CHOICES, DEFAULT_SHARE_EXPIRY_HOURS,
+  createShareHelper, activeShareLinks, SHARE_EXPIRY_CHOICES, DEFAULT_SHARE_EXPIRY_HOURS, glyph,
 } from "/hub-sdk.js";
 import {
   SEV_LABEL, SEV_CLASS, isSafeId, hasSevereAllergy, allergyCountLabel,
@@ -220,6 +220,7 @@ const shareUi = createShareUi({
   noun: "card",
   scopeHtml: (item) => `The page shows ${esc(item.title)}’s allergies and what to do, their medications with the dose and where they’re kept, and their emergency contacts’ phone numbers. Anyone with the link can read it, so send it only to the person looking after them, and pick the shortest expiry that covers the visit. Changes you make here show up on the page straight away.`,
   esc,
+  glyph,
   confirm: (message, opts) => hubConfirm({ message, ...opts, destructive: true }),
   writeText: (text) => navigator.clipboard.writeText(text),
   activeLinks: activeShareLinks,
