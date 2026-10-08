@@ -182,6 +182,43 @@
 
     /* Empty state */
     .empty-text { font-size: 0.875rem; color: var(--hub-text-muted, #9ca3af); padding: 8px 0; }
+    /* Printed health card. Built by print.js into a body-level .print-root that
+       is never shown on screen; print media swaps it in for the app while
+       <html> has .printing. The --hub-* resets make every var() below take its
+       fallback, so paper gets the same dark-on-white card in a dark theme. */
+    .print-root {
+      display: none;
+      --hub-text: initial; --hub-text-muted: initial; --hub-bg: initial;
+      --hub-tint-success: initial; --hub-tint-success-fg: initial;
+      --hub-tint-warning: initial; --hub-tint-warning-fg: initial;
+      --hub-tint-danger: initial; --hub-tint-danger-fg: initial;
+      font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; font-size: 13px; color: var(--hub-text, #111); max-width: 700px; margin: 0 auto;
+    }
+    .print-root .card-title { font-size: 22px; font-weight: 800; border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 6px; }
+    .print-root .card-meta { font-size: 11px; color: var(--hub-text-muted, #777); margin-bottom: 22px; }
+    .print-root .section { margin-bottom: 20px; }
+    .print-root .section-title { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--hub-text-muted, #666); border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-bottom: 10px; }
+    .print-root .entry { padding: 8px 0 8px 12px; border-left: 3px solid #ddd; margin-bottom: 10px; }
+    .print-root .entry-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .print-root .entry-line { font-size: 12px; color: var(--hub-text, #333); margin-top: 4px; line-height: 1.5; }
+    .print-root .steps { margin-top: 2px; white-space: pre-line; }
+    .print-root .note { font-style: italic; }
+    .print-root .sev-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; border-radius: 10px; }
+    .print-root .sev-mild { background: var(--hub-tint-success, #d1fae5); color: var(--hub-tint-success-fg, #065f46); }
+    .print-root .sev-moderate { background: var(--hub-tint-warning, #fef3c7); color: var(--hub-tint-warning-fg, #92400e); }
+    .print-root .sev-severe { background: #fed7aa; color: #9a3412; }
+    .print-root .sev-anaphylactic { background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #991b1b); }
+    .print-root .dose-tag { font-size: 11px; font-weight: 400; color: var(--hub-text-muted, #555); background: var(--hub-bg, #f3f4f6); padding: 1px 6px; border-radius: 4px; }
+    .print-root .rel-tag { font-size: 11px; font-weight: 400; color: var(--hub-text-muted, #666); }
+    .print-root .contact-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+    .print-root .contact-num { min-width: 22px; height: 22px; background: #111; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+    .print-root .phone { font-size: 15px; font-weight: 700; margin-top: 2px; }
+    .print-root .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 11px; color: #aaa; }
+    @media print {
+      html.printing, html.printing body { background: none !important; min-height: 0 !important; }
+      html.printing body > *:not(.print-root) { display: none !important; }
+      html.printing .print-root { display: block; }
+    }
   </style>
 </head>
 <body>
@@ -199,6 +236,7 @@ import {
   cardNameUpdates, profileInsert,
 } from "./logic.js";
 import { createShareUi, createOverlayView } from "./share.js";
+import { printCardMarkup, printInPlace } from "./print.js";
 
 const CONTEXT = window.__CONTEXT_URL ?? "";
 const DB      = window.__DB_URL      ?? "";
@@ -838,100 +876,23 @@ window.deleteContact = async function(contactId) {
 };
 
 // ── Print card ───────────────────────────────────────────────────────────────
+// Printed from this document (see print.js and the `.print-root` rules above):
+// the app frame has no popups, so there is no second window to write into.
 window.printCard = function() {
   const member = members.find(m => m.id === selectedMemberId);
   if (!member) return;
 
   const pid = profiles[selectedMemberId]?.id;
-  const al  = pid ? (allergies[pid]   ?? []) : [];
-  const ml  = pid ? (medications[pid] ?? []) : [];
-  const cl  = pid ? (contacts[pid]    ?? []) : [];
-
-  // local escape for use inside the new window (no hub-sdk available there)
-  function e(s) {
-    return String(s ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  const allergyBlocks = al.map(a => `
-    <div class="entry">
-      <div class="entry-name">${e(a.name)} <span class="sev-tag ${SEV_CLASS[a.severity] ?? "sev-moderate"}">${SEV_LABEL[a.severity] ?? "Moderate"}</span></div>
-      ${a.triggers       ? `<div class="entry-line"><strong>Triggers:</strong> ${e(a.triggers)}</div>` : ""}
-      ${a.symptoms       ? `<div class="entry-line"><strong>Reaction signs:</strong> ${e(a.symptoms)}</div>` : ""}
-      ${a.response_steps ? `<div class="entry-line"><strong>What to do:</strong><div class="steps">${e(a.response_steps).replace(/\n/g, "<br>")}</div></div>` : ""}
-    </div>`).join("");
-
-  const medBlocks = ml.map(m => `
-    <div class="entry">
-      <div class="entry-name">${e(m.name)} ${m.dose ? `<span class="dose-tag">${e(m.dose)}</span>` : ""}</div>
-      ${m.when_to_give ? `<div class="entry-line"><strong>When:</strong> ${e(m.when_to_give)}</div>` : ""}
-      ${m.location     ? `<div class="entry-line"><strong>Location:</strong> ${e(m.location)}</div>` : ""}
-      ${m.notes        ? `<div class="entry-line note">${e(m.notes)}</div>` : ""}
-    </div>`).join("");
-
-  const contactBlocks = cl.map((c, i) => `
-    <div class="contact-row">
-      <div class="contact-num">${i + 1}</div>
-      <div>
-        <div class="entry-name">${e(c.name)} ${c.relationship ? `<span class="rel-tag">${e(c.relationship)}</span>` : ""}</div>
-        ${c.phone ? `<div class="phone">${e(c.phone)}</div>` : ""}
-      </div>
-    </div>`).join("");
-
   const printDate = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const markup = printCardMarkup({
+    member,
+    allergies:   pid ? (allergies[pid]   ?? []) : [],
+    medications: pid ? (medications[pid] ?? []) : [],
+    contacts:    pid ? (contacts[pid]    ?? []) : [],
+    printDate,
+  }, { esc, glyph });
 
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Health Card — ${e(member.name)}</title>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; font-size: 13px; color: var(--hub-text, #111); padding: 28px; max-width: 700px; margin: 0 auto; }
-  .card-title { font-size: 22px; font-weight: 800; border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 6px; }
-  .card-meta { font-size: 11px; color: var(--hub-text-muted, #777); margin-bottom: 22px; }
-  .section { margin-bottom: 20px; }
-  .section-title { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--hub-text-muted, #666); border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-bottom: 10px; }
-  .entry { padding: 8px 0 8px 12px; border-left: 3px solid #ddd; margin-bottom: 10px; }
-  .entry-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .entry-line { font-size: 12px; color: var(--hub-text, #333); margin-top: 4px; line-height: 1.5; }
-  .steps { margin-top: 2px; white-space: pre-line; }
-  .note { font-style: italic; }
-  .sev-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; border-radius: 10px; }
-  .sev-mild { background: var(--hub-tint-success, #d1fae5); color: var(--hub-tint-success-fg, #065f46); }
-  .sev-moderate { background: var(--hub-tint-warning, #fef3c7); color: var(--hub-tint-warning-fg, #92400e); }
-  .sev-severe { background: #fed7aa; color: #9a3412; }
-  .sev-anaphylactic { background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #991b1b); }
-  .dose-tag { font-size: 11px; font-weight: 400; color: var(--hub-text-muted, #555); background: var(--hub-bg, #f3f4f6); padding: 1px 6px; border-radius: 4px; }
-  .rel-tag { font-size: 11px; font-weight: 400; color: var(--hub-text-muted, #666); }
-  .contact-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
-  .contact-num { min-width: 22px; height: 22px; background: #111; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
-  .phone { font-size: 15px; font-weight: 700; margin-top: 2px; }
-  .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 11px; color: #aaa; }
-  .print-btn { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #111; color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
-  @media print { .print-btn { display: none; } body { padding: 0; } }
-</style>
-</head>
-<body>
-<div class="card-title">Emergency Health Card — ${e(member.name)}</div>
-<div class="card-meta">Printed ${e(printDate)} · Keep with the child at all times</div>
-
-${al.length > 0 ? `<div class="section"><div class="section-title">⚠ Allergies</div>${allergyBlocks}</div>` : ""}
-${ml.length > 0 ? `<div class="section"><div class="section-title">Emergency Medications</div>${medBlocks}</div>` : ""}
-${cl.length > 0 ? `<div class="section"><div class="section-title">Emergency Contacts</div>${contactBlocks}</div>` : ""}
-${al.length === 0 && ml.length === 0 && cl.length === 0 ? "<p>No health information on file for this person.</p>" : ""}
-
-<div class="footer">Verify all information before distributing. Generated by your family health records.</div>
-<button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
-</body>
-</html>`;
-
-  const win = window.open("", "_blank");
-  if (win) { win.document.write(html); win.document.close(); }
+  printInPlace(window, markup, { title: `Health Card — ${member.name ?? ""}` });
 };
 
 // ── Init ─────────────────────────────────────────────────────────────────────
