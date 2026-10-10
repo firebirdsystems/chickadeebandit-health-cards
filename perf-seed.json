@@ -1,0 +1,297 @@
+{
+  "seed": [
+    {
+      "sql": "INSERT INTO app_health_cards__health_profiles (id, member_id, notes, created_at, updated_at) VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days'))",
+      "params": [
+        "ph-profile-1",
+        "{{me}}",
+        "Wears a medical alert bracelet. Prefers Mercy General if an ambulance is called. Primary care is Dr. Patel at Northside Family Medicine."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days','+0 minutes'))",
+      "params": [
+        "ph-a0",
+        "ph-profile-1",
+        "Peanuts",
+        "anaphylactic",
+        "Any peanut product, including oils and shared fryers",
+        "Hives, throat tightness, wheezing within minutes",
+        "Give the EpiPen in the outer thigh. Call 911. Second pen after 5 minutes if no improvement.",
+        0
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days','+1 minutes'))",
+      "params": [
+        "ph-a1",
+        "ph-profile-1",
+        "Tree nuts",
+        "severe",
+        "Cashews, walnuts, pecans, pistachios",
+        "Swelling of the lips and face, vomiting",
+        "Give Benadryl right away. Use the EpiPen if breathing changes. Call 911.",
+        1
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days','+2 minutes'))",
+      "params": [
+        "ph-a2",
+        "ph-profile-1",
+        "Penicillin",
+        "severe",
+        "Amoxicillin and other penicillin antibiotics",
+        "Full body rash, facial swelling",
+        "Tell every provider before any prescription. Go to urgent care if exposed.",
+        2
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days','+3 minutes'))",
+      "params": [
+        "ph-a3",
+        "ph-profile-1",
+        "Bee stings",
+        "moderate",
+        "Honeybees and yellowjackets",
+        "Large local swelling, itching for days",
+        "Remove the stinger, ice the area, give an antihistamine. Watch for breathing changes for an hour.",
+        3
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days','+4 minutes'))",
+      "params": [
+        "ph-a4",
+        "ph-profile-1",
+        "Shellfish",
+        "moderate",
+        "Shrimp, crab, lobster",
+        "Hives and stomach cramps",
+        "Give Benadryl. Monitor for two hours.",
+        4
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days','+5 minutes'))",
+      "params": [
+        "ph-a5",
+        "ph-profile-1",
+        "Latex",
+        "mild",
+        "Gloves, balloons, some bandages",
+        "Itchy red skin where it touched",
+        "Wash the area with soap and water. Use latex-free bandages from the kit.",
+        5
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days','+6 minutes'))",
+      "params": [
+        "ph-a6",
+        "ph-profile-1",
+        "Seasonal pollen",
+        "mild",
+        "Grass and ragweed, worst in May and September",
+        "Sneezing, itchy eyes",
+        "Daily cetirizine during the season. Keep windows closed on high count days.",
+        6
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days','+7 minutes'))",
+      "params": [
+        "ph-a7",
+        "ph-profile-1",
+        "Cat dander",
+        "mild",
+        "Long visits in homes with cats",
+        "Congestion, watery eyes",
+        "Antihistamine before the visit. Wash hands after petting.",
+        7
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, created_at, notes) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+0 minutes'), ?)",
+      "params": [
+        "ph-m0",
+        "ph-profile-1",
+        "EpiPen 0.3mg",
+        "One auto-injector",
+        "Any sign of a severe reaction: trouble breathing, throat swelling",
+        "Front pocket of the black backpack, spare in the kitchen drawer",
+        "Check the expiry date each September."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, created_at, notes) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+1 minutes'), ?)",
+      "params": [
+        "ph-m1",
+        "ph-profile-1",
+        "Benadryl (diphenhydramine)",
+        "25 mg, one tablet",
+        "Hives or swelling without breathing trouble",
+        "Medicine cabinet, top shelf",
+        "May cause drowsiness."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, created_at, notes) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+2 minutes'), ?)",
+      "params": [
+        "ph-m2",
+        "ph-profile-1",
+        "Albuterol inhaler",
+        "Two puffs",
+        "Wheezing or chest tightness, may repeat after 20 minutes",
+        "Nightstand and gym bag",
+        "Use with the spacer."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+3 minutes'))",
+      "params": [
+        "ph-m3",
+        "ph-profile-1",
+        "Cetirizine",
+        "10 mg once daily",
+        "Every morning during pollen season",
+        "Bathroom counter"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, created_at, notes) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+4 minutes'), ?)",
+      "params": [
+        "ph-m4",
+        "ph-profile-1",
+        "Lisinopril",
+        "10 mg once daily",
+        "Every morning with breakfast",
+        "Weekly pill organizer in the kitchen",
+        "Do not double up if a dose is missed."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+5 minutes'))",
+      "params": [
+        "ph-m5",
+        "ph-profile-1",
+        "Vitamin D3",
+        "2000 IU once daily",
+        "With breakfast",
+        "Weekly pill organizer in the kitchen"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, created_at, notes) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+6 minutes'), ?)",
+      "params": [
+        "ph-m6",
+        "ph-profile-1",
+        "Ibuprofen",
+        "400 mg",
+        "Headache or muscle pain, no more than three times a day",
+        "Medicine cabinet",
+        "Take with food."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+7 minutes'))",
+      "params": [
+        "ph-m7",
+        "ph-profile-1",
+        "Hydrocortisone cream 1%",
+        "Thin layer",
+        "Itchy rash or insect bites, up to twice a day",
+        "First aid kit in the hall closet"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+8 minutes'))",
+      "params": [
+        "ph-m8",
+        "ph-profile-1",
+        "Saline nasal spray",
+        "Two sprays each side",
+        "Congestion, as needed",
+        "Bathroom counter"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+0 minutes'))",
+      "params": [
+        "ph-c0",
+        "ph-profile-1",
+        "Jordan Mayer",
+        "Spouse",
+        "555-0142",
+        1
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+1 minutes'))",
+      "params": [
+        "ph-c1",
+        "ph-profile-1",
+        "Dr. Anita Patel",
+        "Primary care doctor",
+        "555-0110",
+        2
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+2 minutes'))",
+      "params": [
+        "ph-c2",
+        "ph-profile-1",
+        "Carol Mayer",
+        "Mother",
+        "555-0177",
+        3
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+3 minutes'))",
+      "params": [
+        "ph-c3",
+        "ph-profile-1",
+        "Northside Allergy Clinic",
+        "Allergist",
+        "555-0125",
+        4
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+4 minutes'))",
+      "params": [
+        "ph-c4",
+        "ph-profile-1",
+        "Sam Okafor",
+        "Neighbor, has a house key",
+        "555-0163",
+        5
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+5 minutes'))",
+      "params": [
+        "ph-c5",
+        "ph-profile-1",
+        "Elm Street Pharmacy",
+        "Pharmacy",
+        "555-0188",
+        6
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-38 days','+6 minutes'))",
+      "params": [
+        "ph-c6",
+        "ph-profile-1",
+        "Poison Control",
+        "Hotline",
+        "800-222-1222",
+        7
+      ]
+    }
+  ]
+}
