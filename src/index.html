@@ -181,6 +181,8 @@
     .form-field textarea { resize: vertical; }
 
     /* Empty state */
+    .load-error { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #b91c1c); font-size: 0.9rem; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+    .load-error-retry { background: none; border: 1px solid currentColor; border-radius: 8px; padding: 5px 10px; font: inherit; font-weight: 600; color: inherit; cursor: pointer; flex-shrink: 0; }
     .empty-text { font-size: 0.875rem; color: var(--hub-text-muted, #9ca3af); padding: 8px 0; }
     /* Printed health card. Built by print.js into a body-level .print-root that
        is never shown on screen; print media swaps it in for the app while
@@ -228,7 +230,7 @@
 
 <script type="module">
 import {
-  esc, memberColor, initial, hubConfirm,
+  esc, memberColor, initial, hubConfirm, hubAlert,
   createShareHelper, activeShareLinks, SHARE_EXPIRY_CHOICES, DEFAULT_SHARE_EXPIRY_HOURS, glyph,
 } from "/hub-sdk.js";
 import {
@@ -281,6 +283,8 @@ let selectedMemberId = null;
 let modalEl = null;
 // Set when the hub refuses the reads outright (see loadAllProfileData).
 let accessDenied = false;
+// Set when the first read of the cards failed for any other reason.
+let loadFailed = false;
 
 // ── DB helper ────────────────────────────────────────────────────────────────
 async function db(sql, params = []) {
@@ -290,7 +294,25 @@ async function db(sql, params = []) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sql, params }),
   });
-  return res.json();
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json || typeof json !== "object" || json.error) {
+    throw Object.assign(new Error(json?.error || "Couldn’t reach the hub. Try again."), { status: res.status });
+  }
+  return json;
+}
+
+// Sends a write whose result is already on the card. If the hub refuses it,
+// the cards are read again so the page shows what is stored, and the member
+// is told the change did not save.
+async function persist(write) {
+  try {
+    await write;
+  } catch (e) {
+    console.error(e);
+    await loadAllProfileData().catch(() => {});
+    render();
+    hubAlert("That change could not be saved. Try again.");
+  }
 }
 
 // ── Modal helpers ────────────────────────────────────────────────────────────
@@ -314,10 +336,10 @@ async function loadMembers() {
     ];
     return;
   }
-  try {
-    const res = await fetch(`${CONTEXT}?keys=family.members`);
-    members = ((await res.json())["family.members"]) ?? [];
-  } catch { members = []; }
+  const res = await fetch(`${CONTEXT}?keys=family.members`);
+  const ctx = await res.json().catch(() => null);
+  if (!res.ok || !ctx || typeof ctx !== "object" || ctx.$errors?.length) throw new Error("Couldn’t reach the hub. Try again.");
+  members = ctx["family.members"] ?? [];
 }
 
 async function loadProfileData(memberId) {
@@ -382,21 +404,23 @@ async function loadAllProfileData() {
     return;
   }
 
-  const [pr, ar, mr, cr] = await Promise.all([
-    db("SELECT * FROM app_health_cards__health_profiles ORDER BY created_at"),
-    db("SELECT * FROM app_health_cards__health_allergies ORDER BY profile_id, sort_order, created_at"),
-    db("SELECT * FROM app_health_cards__health_medications ORDER BY profile_id, created_at"),
-    db("SELECT * FROM app_health_cards__health_contacts ORDER BY profile_id, priority, created_at"),
-  ]);
-
-  // A refusal comes back as {error}, not as rows, and `rows ?? []` below would
-  // render it as "no health information on file for anyone" — a different and
-  // dangerously reassuring statement. Every table here is `adult_only`, so the
-  // hub refuses even the SELECT for a non-adult. The app's audience is `adults`
-  // and normally nobody else gets this far, but an admin can grant a member
-  // access individually ("Granted" in the hub's Member access panel), which is
-  // checked BEFORE the audience rule.
-  if (pr.error || ar.error || mr.error || cr.error) {
+  // A refusal is not "no health information on file for anyone" — a different
+  // and dangerously reassuring statement. Every table here is `adult_only`, so
+  // the hub refuses even the SELECT for a non-adult (403). The app's audience
+  // is `adults` and normally nobody else gets this far, but an admin can grant
+  // a member access individually ("Granted" in the hub's Member access panel),
+  // which is checked BEFORE the audience rule. Any other failure is rethrown
+  // for the caller to report.
+  let pr, ar, mr, cr;
+  try {
+    [pr, ar, mr, cr] = await Promise.all([
+      db("SELECT * FROM app_health_cards__health_profiles ORDER BY created_at"),
+      db("SELECT * FROM app_health_cards__health_allergies ORDER BY profile_id, sort_order, created_at"),
+      db("SELECT * FROM app_health_cards__health_medications ORDER BY profile_id, created_at"),
+      db("SELECT * FROM app_health_cards__health_contacts ORDER BY profile_id, priority, created_at"),
+    ]);
+  } catch (e) {
+    if (e.status !== 403) throw e;
     accessDenied = true;
     return;
   }
@@ -469,6 +493,17 @@ function renderList() {
           <p class="subtitle">Allergy &amp; emergency information for your family</p>
         </div>
         <p class="empty-text">Health cards are kept to the adults in this household.</p>
+      </div>`;
+    return;
+  }
+  if (loadFailed) {
+    document.getElementById("app").innerHTML = `
+      <div class="container">
+        <div class="page-header">
+          <h1>Health Cards</h1>
+          <p class="subtitle">Allergy &amp; emergency information for your family</p>
+        </div>
+        <div class="load-error" data-testid="load-error" role="alert"><span>Couldn’t load the health cards.</span> <button type="button" class="load-error-retry" data-testid="load-retry" onclick="retryLoad()">Try again</button></div>
       </div>`;
     return;
   }
@@ -629,7 +664,14 @@ window.selectMember = async function(memberId) {
   if (profiles[memberId] === undefined) {
     document.getElementById("app").innerHTML =
       `<div class="container"><p class="subtitle" style="margin-top:40px">Loading…</p></div>`;
-    await loadProfileData(memberId);
+    try {
+      await loadProfileData(memberId);
+    } catch {
+      selectedMemberId = null;
+      render();
+      hubAlert("That card could not be loaded. Try again.");
+      return;
+    }
   }
   render();
 };
@@ -691,10 +733,10 @@ window.submitAllergyForm = async function(allergyId) {
       if (idx >= 0) allergies[pid][idx] = { ...allergies[pid][idx], name, severity, triggers, symptoms, response_steps: steps };
       closeModal();
       render();
-      db(
+      persist(db(
         "UPDATE app_health_cards__health_allergies SET name = ?, severity = ?, triggers = ?, symptoms = ?, response_steps = ? WHERE id = ?",
         [name, severity, triggers, symptoms, steps, allergyId]
-      );
+      ));
     } else {
       const id         = crypto.randomUUID();
       const sort_order = (allergies[pid] ?? []).length;
@@ -702,13 +744,14 @@ window.submitAllergyForm = async function(allergyId) {
       allergies[pid].push({ id, profile_id: pid, name, severity, triggers, symptoms, response_steps: steps, sort_order, created_at: now });
       closeModal();
       render();
-      db(
+      persist(db(
         "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [id, pid, name, severity, triggers, symptoms, steps, sort_order, now]
-      );
+      ));
     }
   } catch (e) {
     console.error(e);
+    hubAlert("That change could not be saved. Try again.");
   }
 };
 
@@ -718,7 +761,7 @@ window.deleteAllergy = async function(allergyId) {
   const pid = profiles[selectedMemberId]?.id;
   if (pid) allergies[pid] = (allergies[pid] ?? []).filter(a => a.id !== allergyId);
   render();
-  db("DELETE FROM app_health_cards__health_allergies WHERE id = ?", [allergyId]);
+  persist(db("DELETE FROM app_health_cards__health_allergies WHERE id = ?", [allergyId]));
 };
 
 // ── Medication CRUD ──────────────────────────────────────────────────────────
@@ -773,23 +816,24 @@ window.submitMedicationForm = async function(medId) {
       if (idx >= 0) medications[pid][idx] = { ...medications[pid][idx], name, dose, when_to_give: when_to, location, notes };
       closeModal();
       render();
-      db(
+      persist(db(
         "UPDATE app_health_cards__health_medications SET name = ?, dose = ?, when_to_give = ?, location = ?, notes = ? WHERE id = ?",
         [name, dose, when_to, location, notes, medId]
-      );
+      ));
     } else {
       const id = crypto.randomUUID();
       if (!medications[pid]) medications[pid] = [];
       medications[pid].push({ id, profile_id: pid, name, dose, when_to_give: when_to, location, notes, created_at: now });
       closeModal();
       render();
-      db(
+      persist(db(
         "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         [id, pid, name, dose, when_to, location, notes, now]
-      );
+      ));
     }
   } catch (e) {
     console.error(e);
+    hubAlert("That change could not be saved. Try again.");
   }
 };
 
@@ -799,7 +843,7 @@ window.deleteMedication = async function(medId) {
   const pid = profiles[selectedMemberId]?.id;
   if (pid) medications[pid] = (medications[pid] ?? []).filter(m => m.id !== medId);
   render();
-  db("DELETE FROM app_health_cards__health_medications WHERE id = ?", [medId]);
+  persist(db("DELETE FROM app_health_cards__health_medications WHERE id = ?", [medId]));
 };
 
 // ── Contact CRUD ─────────────────────────────────────────────────────────────
@@ -845,10 +889,10 @@ window.submitContactForm = async function(contactId) {
       if (idx >= 0) contacts[pid][idx] = { ...contacts[pid][idx], name, relationship: rel, phone };
       closeModal();
       render();
-      db(
+      persist(db(
         "UPDATE app_health_cards__health_contacts SET name = ?, relationship = ?, phone = ? WHERE id = ?",
         [name, rel, phone, contactId]
-      );
+      ));
     } else {
       const id       = crypto.randomUUID();
       const priority = (contacts[pid] ?? []).length + 1;
@@ -856,13 +900,14 @@ window.submitContactForm = async function(contactId) {
       contacts[pid].push({ id, profile_id: pid, name, relationship: rel, phone, priority, created_at: now });
       closeModal();
       render();
-      db(
+      persist(db(
         "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         [id, pid, name, rel, phone, priority, now]
-      );
+      ));
     }
   } catch (e) {
     console.error(e);
+    hubAlert("That change could not be saved. Try again.");
   }
 };
 
@@ -872,7 +917,7 @@ window.deleteContact = async function(contactId) {
   const pid = profiles[selectedMemberId]?.id;
   if (pid) contacts[pid] = (contacts[pid] ?? []).filter(c => c.id !== contactId);
   render();
-  db("DELETE FROM app_health_cards__health_contacts WHERE id = ?", [contactId]);
+  persist(db("DELETE FROM app_health_cards__health_contacts WHERE id = ?", [contactId]));
 };
 
 // ── Print card ───────────────────────────────────────────────────────────────
@@ -896,13 +941,23 @@ window.printCard = function() {
 };
 
 // ── Init ─────────────────────────────────────────────────────────────────────
-(async () => {
-  await loadMembers();
-  render();
-  await loadAllProfileData();
+async function firstLoad() {
+  try {
+    await loadMembers();
+    render();
+    await loadAllProfileData();
+    loadFailed = false;
+  } catch (e) {
+    console.error(e);
+    loadFailed = true;
+    render();
+    return;
+  }
   render();
   await refreshCardNames();
-})();
+}
+window.retryLoad = firstLoad;
+firstLoad();
 </script>
 </body>
 </html>
