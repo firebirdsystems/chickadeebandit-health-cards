@@ -132,8 +132,5 @@
   },
   "nav": {
     "label": "Health Cards"
-  },
-  "resource_limits": {
-    "max_db_bytes": 52428800
   }
 }
