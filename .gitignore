@@ -4,3 +4,4 @@ node_modules/
 
 .hub-sdk.js
 graft/
+.hub-share-ui.js
