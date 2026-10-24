@@ -16,16 +16,18 @@
     "kids"
   ],
   "storage": "db",
-  "db_plaintext_columns": ["priority"],
+  "db_plaintext_columns": ["priority", "visibility"],
   "preload": {
     "health_profiles": {"sql": "SELECT * FROM app_health_cards__health_profiles ORDER BY created_at"},
     "health_allergies": {"sql": "SELECT * FROM app_health_cards__health_allergies ORDER BY profile_id, sort_order, created_at"},
     "health_medications": {"sql": "SELECT * FROM app_health_cards__health_medications ORDER BY profile_id, created_at"},
-    "health_contacts": {"sql": "SELECT * FROM app_health_cards__health_contacts ORDER BY profile_id, priority, created_at"}
+    "health_contacts": {"sql": "SELECT * FROM app_health_cards__health_contacts ORDER BY profile_id, priority, created_at"},
+    "settings": {"sql": "SELECT key, value FROM app_health_cards__settings WHERE key = 'care_team_group_id'"}
   },
   "data_access": {
     "reads": [
-      "family.members"
+      "family.members",
+      "family.groups"
     ],
     "writes": []
   },
@@ -35,21 +37,101 @@
   },
   "row_policies": {
     "health_profiles": {
-      "kind": "adult_only",
-      "audit_writes": true
+      "kind": "owner_or_visibility",
+      "member_column": "member_id",
+      "visibility_column": "visibility",
+      "everyone_values": [],
+      "adult_values": ["adults", "care"],
+      "privileged_values": ["care"],
+      "privileged_groups": [
+        { "settings_table": "settings", "settings_key": "care_team_group_id", "actions": ["select"] }
+      ],
+      "supervisor_assigns_owner": true,
+      "coparenting_child_supervision": true,
+      "delete_adult_only": true,
+      "audit_writes": true,
+      "column_write_acls": {
+        "id": { "writable_by": [], "actions": ["update"] },
+        "member_id": { "writable_by": [], "actions": ["update"] },
+        "notes": { "writable_by": ["adult"] },
+        "card_name": { "writable_by": ["adult"] },
+        "visibility": { "writable_by": ["adult"] },
+        "created_at": { "writable_by": ["adult"] },
+        "updated_at": { "writable_by": ["adult"] }
+      }
     },
     "health_allergies": {
-      "kind": "adult_only",
-      "audit_writes": true
+      "kind": "inherit_visibility",
+      "fk_column": "profile_id",
+      "parent_table": "health_profiles",
+      "writer_column": "created_by",
+      "adults_bypass": true,
+      "coparenting_child_supervision": true,
+      "delete_adult_only": true,
+      "audit_writes": true,
+      "column_write_acls": {
+        "id": { "writable_by": ["adult"] },
+        "profile_id": { "writable_by": ["adult"] },
+        "name": { "writable_by": ["adult"] },
+        "severity": { "writable_by": ["adult"] },
+        "triggers": { "writable_by": ["adult"] },
+        "symptoms": { "writable_by": ["adult"] },
+        "response_steps": { "writable_by": ["adult"] },
+        "sort_order": { "writable_by": ["adult"] },
+        "created_at": { "writable_by": ["adult"] },
+        "created_by": { "writable_by": [], "actions": ["update"] }
+      }
     },
     "health_medications": {
-      "kind": "adult_only",
-      "audit_writes": true
+      "kind": "inherit_visibility",
+      "fk_column": "profile_id",
+      "parent_table": "health_profiles",
+      "writer_column": "created_by",
+      "adults_bypass": true,
+      "coparenting_child_supervision": true,
+      "delete_adult_only": true,
+      "audit_writes": true,
+      "column_write_acls": {
+        "id": { "writable_by": ["adult"] },
+        "profile_id": { "writable_by": ["adult"] },
+        "name": { "writable_by": ["adult"] },
+        "dose": { "writable_by": ["adult"] },
+        "when_to_give": { "writable_by": ["adult"] },
+        "location": { "writable_by": ["adult"] },
+        "notes": { "writable_by": ["adult"] },
+        "created_at": { "writable_by": ["adult"] },
+        "created_by": { "writable_by": [], "actions": ["update"] }
+      }
     },
     "health_contacts": {
-      "kind": "adult_only",
-      "audit_writes": true
-    }
+      "kind": "inherit_visibility",
+      "fk_column": "profile_id",
+      "parent_table": "health_profiles",
+      "writer_column": "created_by",
+      "adults_bypass": true,
+      "coparenting_child_supervision": true,
+      "delete_adult_only": true,
+      "audit_writes": true,
+      "column_write_acls": {
+        "id": { "writable_by": ["adult"] },
+        "profile_id": { "writable_by": ["adult"] },
+        "name": { "writable_by": ["adult"] },
+        "relationship": { "writable_by": ["adult"] },
+        "phone": { "writable_by": ["adult"] },
+        "priority": { "writable_by": ["adult"] },
+        "created_at": { "writable_by": ["adult"] },
+        "created_by": { "writable_by": [], "actions": ["update"] }
+      }
+    },
+    "settings": { "kind": "app_config" }
+  },
+  "admin_config": { "settings_table": "settings", "keys": ["care_team_group_id"] },
+  "delete_cascades": {
+    "health_profiles": [
+      { "table": "health_allergies", "foreign_key": "profile_id" },
+      { "table": "health_medications", "foreign_key": "profile_id" },
+      { "table": "health_contacts", "foreign_key": "profile_id" }
+    ]
   },
   "member_references": {
     "health_profiles": {
@@ -69,7 +151,10 @@
           "foreign_key": "profile_id"
         }
       ]
-    }
+    },
+    "health_allergies": { "column": "created_by", "on_removed": "keep" },
+    "health_medications": { "column": "created_by", "on_removed": "keep" },
+    "health_contacts": { "column": "created_by", "on_removed": "keep" }
   },
   "shareable": {
     "card": {

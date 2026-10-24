@@ -70,3 +70,101 @@ export function profileInsert(id, member, now) {
         cardName: null,
       };
 }
+
+// ── Care team ────────────────────────────────────────────────────────────────
+
+/** The two values of a profile's `visibility` column. */
+export const VISIBILITY_ADULTS = "adults";
+export const VISIBILITY_CARE = "care";
+
+/** A card the care team reads as well as the adults: the household's chosen
+ * member group (a nanny who signs in as a guest, a grandparent). */
+export function isCareProfile(profile) {
+  return profile?.visibility === VISIBILITY_CARE;
+}
+
+/**
+ * Whether a member is on the care team: the hub member group the app's
+ * `care_team_group_id` setting names. Mirrors the hub's privileged_groups
+ * rule for the health_profiles table (select only): nobody is on it until an
+ * admin has chosen a group, and a group that no longer exists names no one.
+ * For the page's labels only — the hub decides which cards a member reads.
+ * Medications has its own Care team setting (the same key name, its own
+ * value): an admin chooses the same group there.
+ */
+export function isCareTeamMember(member, groups, careTeamGroupId) {
+  if (!member || !careTeamGroupId) return false;
+  const group = (groups ?? []).find(g => g?.id === careTeamGroupId);
+  return !!group && (group.memberIds ?? []).includes(member.id);
+}
+
+/**
+ * Whether the page offers "Share with the care team" on a member's card: on
+ * the viewer's own card, and on a child's card (role child) — never on another
+ * adult's card, nor a guest's (the nanny's own). Mirrors Medications'
+ * canChooseVisibility. At home the hub takes the column from any adult (column_write_acls
+ * visibility: adult); in a co-parenting space it writes only the caller's own
+ * and a child's card (coparenting_child_supervision), never the other parent's.
+ */
+export function canShareWithCareTeam(ownerId, me, members = []) {
+  if (!isAdultMember(me) || !ownerId) return false;
+  if (ownerId === me.id) return true;
+  const owner = (members ?? []).find(m => m?.id === ownerId);
+  return owner?.role === "child";
+}
+
+// Must match hub-sdk's isAdult; copied so this file stays SDK-free for tests.
+function isAdultMember(member) {
+  return !!member && (member.role === "adult" || member.role === "admin");
+}
+
+/**
+ * The line a failed write shows (app-template "Refused, gone, or failed"):
+ * decided from the status, never from the hub's text. "Try again" only where
+ * trying again can work.
+ */
+export function failureLine(e, { action }) {
+  if (e?.status === 403) return `You don’t have permission to ${action}.`;
+  if (e?.status === 507) return "The household’s storage is full — free up space first.";
+  return `Couldn’t ${action} — try again.`;
+}
+
+// ── Optimistic entries ───────────────────────────────────────────────────────
+
+/**
+ * The last confirmed state of one entry, taken just before an optimistic
+ * add, edit or remove: a copy of the row and its position in the card's list,
+ * or `row: null` when the entry is not there yet (an add).
+ */
+export function entrySnapshot(list, id) {
+  const index = (list ?? []).findIndex(r => r?.id === id);
+  return { id, row: index >= 0 ? { ...list[index] } : null, index };
+}
+
+/**
+ * `list` with one entry put back as `snapshot` recorded it: an add taken out,
+ * an edit undone in place, a removed entry back at its position. For a write
+ * that failed when the re-read that would show what is stored failed too —
+ * the card must not keep showing (and printing) a change the hub refused.
+ */
+export function restoreEntry(list, snapshot) {
+  const rest = (list ?? []).filter(r => r?.id !== snapshot.id);
+  if (!snapshot.row) return rest;
+  rest.splice(Math.min(Math.max(snapshot.index, 0), rest.length), 0, snapshot.row);
+  return rest;
+}
+
+/** The entries of a list that are stored: an add whose INSERT has not
+ * settled (its id in `pendingIds`) is left out — the printed card carries only
+ * what the hub has confirmed. */
+export function confirmedEntries(list, pendingIds) {
+  return (list ?? []).filter(r => !pendingIds?.has(r?.id));
+}
+
+/** Whether card `pid` may be printed: no add, edit or remove on it still in
+ * flight (`inFlight`: profile id → unsettled writes) and no care-team switch
+ * write (`careWriteInFlight`). A pending edit's value is unconfirmed and a
+ * pending removal hides what is stored, so printing waits for them. */
+export function printReady(inFlight, pid, careWriteInFlight = false) {
+  return !careWriteInFlight && !(pid && (inFlight?.get(pid) ?? 0) > 0);
+}

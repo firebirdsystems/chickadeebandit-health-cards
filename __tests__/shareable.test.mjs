@@ -79,11 +79,14 @@ describe("shareable.card", () => {
     ]);
   });
 
-  it("declares priority plaintext, and nothing else", () => {
+  it("declares priority and the card's visibility plaintext, and nothing else", () => {
     // priority is an INTEGER the app writes as a number, and the codec never
     // encrypts numbers, so the stored cells are already plaintext. Declaring an
-    // encrypted TEXT column here instead would break its reads.
-    expect(manifest.db_plaintext_columns).toEqual(["priority"]);
+    // encrypted TEXT column here instead would break its reads. visibility is
+    // the row policy's own column (owner_or_visibility compares it), one of
+    // two fixed words, never a projected share column.
+    expect(manifest.db_plaintext_columns).toEqual(["priority", "visibility"]);
+    expect(card.columns).not.toContain("visibility");
     const init = readFileSync(join(__dirname, "../migrations/001_init.sql"), "utf-8");
     expect(init).toMatch(/\bpriority INTEGER NOT NULL DEFAULT 1\b/);
   });
@@ -98,7 +101,10 @@ describe("the Share button", () => {
   it("is shown only to admins, when sharing is on", () => {
     expect(html).toMatch(/const CAN_SHARE = share\.enabled && IS_ADMIN;/);
     expect(html).toMatch(/const IS_ADMIN\s+= window\.__IS_ADMIN === true;/);
-    expect(html).toMatch(/\$\{CAN_SHARE && pid \? `<button[^`]*onclick="shareCard\(\)"/);
+    expect(html).toMatch(/\$\{canShareLink\(member\.id\) && pid \? `<button[^`]*onclick="shareCard\(\)"/);
+    // A co-parenting steward shares only a card they may retitle: their own or a child's.
+    expect(html).toContain("return CAN_SHARE && (!COPARENTING_STEWARD || canEditCard(memberId));");
+    expect(html).toContain("if (!member || !profile || !canShareLink(member.id)) return;");
   });
 
   it("mints the card item type for the profile", () => {

@@ -184,6 +184,14 @@
     .load-error { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #b91c1c); font-size: 0.9rem; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
     .load-error-retry { background: none; border: 1px solid currentColor; border-radius: 8px; padding: 5px 10px; font: inherit; font-weight: 600; color: inherit; cursor: pointer; flex-shrink: 0; }
     .empty-text { font-size: 0.875rem; color: var(--hub-text-muted, #9ca3af); padding: 8px 0; }
+    /* Care team */
+    .badge-care { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 12px; text-transform: uppercase; letter-spacing: 0.04em; background: var(--hub-tint-info, #dbeafe); color: var(--hub-tint-info-fg, #1e40af); white-space: nowrap; }
+    .care-row { display: flex; align-items: flex-start; gap: 10px; background: var(--hub-surface, #fff); border: 1px solid var(--hub-border, #e5e7eb); border-radius: 10px; padding: 12px 14px; margin-bottom: 20px; font-size: 0.875rem; }
+    .care-row input { margin-top: 3px; flex-shrink: 0; }
+    .care-row .care-hint { color: var(--hub-text-muted, #6b7280); font-size: 0.8rem; margin-top: 3px; line-height: 1.45; }
+    .header-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .btn-ghost { background: none; color: var(--hub-text-muted, #374151); border: 1px solid var(--hub-border, #d1d5db); border-radius: 8px; padding: 5px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+    .btn-ghost:hover { background: var(--hub-bg, #f3f4f6); }
     /* Printed health card. Built by print.js into a body-level .print-root that
        is never shown on screen; print media swaps it in for the app while
        <html> has .printing. The --hub-* resets make every var() below take its
@@ -230,12 +238,14 @@
 
 <script type="module">
 import {
-  esc, memberColor, initial, hubConfirm, hubAlert,
+  esc, memberColor, initial, hubConfirm, hubAlert, isAdult,
   createShareHelper, activeShareLinks, SHARE_EXPIRY_CHOICES, DEFAULT_SHARE_EXPIRY_HOURS, glyph,
 } from "/hub-sdk.js";
 import {
   SEV_LABEL, SEV_CLASS, isSafeId, hasSevereAllergy, allergyCountLabel,
   cardNameUpdates, profileInsert,
+  VISIBILITY_ADULTS, VISIBILITY_CARE, isCareProfile, isCareTeamMember,
+  canShareWithCareTeam, failureLine, entrySnapshot, restoreEntry, confirmedEntries, printReady,
 } from "./logic.js";
 import { createShareUi, createOverlayView } from "/hub-share-ui.js";
 import { printCardMarkup, printInPlace } from "./print.js";
@@ -245,14 +255,78 @@ const DB      = window.__DB_URL      ?? "";
 const APP_ID  = window.__APP_ID      ?? "health-cards";
 const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
 const IS_ADMIN   = window.__IS_ADMIN === true;
+const ADMIN_CONFIG_URL = window.__ADMIN_CONFIG_URL ?? "";
+// Who may change a card. The row policies take writes from an adult alone
+// (at home the adults; in a shared space every participant); a guest or a
+// child reads what the hub shows them — their own card, and the care team's
+// cards — and the page offers them nothing the hub would refuse. The demo
+// (no database) shows the adult's page.
+const IS_ADULT = !DB || isAdult(HUB_MEMBER);
+// Who wrote an entry. The hub stamps the caller on every INSERT (row policy
+// writer_column) and requires the column to be named, so the page binds the
+// member it already knows; what is stored is the hub's answer.
+const WRITER = HUB_MEMBER?.id ?? "";
+// In a shared space every participant is an adult, but only the steward
+// supervises: the hub stamps a participant's new card to the participant and
+// narrows their changes to their own card, so the page offers a participant
+// their own card alone and the steward every card. In a co-parenting space
+// each parent is a steward, and the hub supervises CHILDREN only
+// (coparenting_child_supervision): a parent creates a child's card, and
+// changes or removes any entry on it, whichever parent wrote it. An adult's
+// card — the other parent's — stays theirs: a parent is offered their own
+// card and their own entries there, never the other parent's.
+const IN_SPACE = (window.__TENANT_KIND ?? "household") !== "household";
+const SPACE_KIND = window.__SPACE_KIND ?? null;
+const SUPERVISES = !IN_SPACE || (IS_ADMIN && SPACE_KIND !== "coparenting");
+const COPARENTING_STEWARD = IN_SPACE && IS_ADMIN && SPACE_KIND === "coparenting";
+// Whether the viewer supervises this member's card: everyone's where SUPERVISES,
+// and a child's card for a co-parenting steward (the roster's role decides,
+// as the hub's current-child-member check does).
+function supervisesCard(memberId) {
+  return SUPERVISES
+    || (COPARENTING_STEWARD && members.find(m => m.id === memberId)?.role === "child");
+}
+function canEditCard(memberId) {
+  return IS_ADULT && (supervisesCard(memberId) || memberId === HUB_MEMBER?.id);
+}
+// Whether the viewer may change or remove one entry on the open card. At home
+// an adult changes any entry (adults_bypass); in a space a participant's
+// changes land only on the entries they wrote (writer column created_by) —
+// not the steward's; an entry from before the column existed is credited to
+// the card's member (migration 003) — so the page offers Edit/Remove on those
+// alone. The steward changes any; a co-parenting steward any on a child's
+// card (supervisesCard). Removing is for adults alone — the hub refuses a
+// non-adult's DELETE (delete_adult_only) and canEditCard already leaves a
+// guest or child no controls. An entry whose INSERT has not settled is not
+// offered either: an Edit or Remove sent now could reach the hub before the row.
+// Nor is an entry with an edit or remove in flight (entriesInFlight): one
+// change at a time, so each snapshot is of the confirmed entry.
+function canChangeEntry(entry) {
+  return canEditCard(selectedMemberId) && !pendingInserts.has(entry?.id)
+    && !entriesInFlight.has(entry?.id)
+    && (supervisesCard(selectedMemberId) || (!!WRITER && entry?.created_by === WRITER));
+}
+// Whether this viewer is offered "Share with the care team" on a card: their
+// own, and a child's (canShareWithCareTeam), on a card they may change.
+function canShareCard(memberId) {
+  return canEditCard(memberId) && (!DB || canShareWithCareTeam(memberId, HUB_MEMBER, members));
+}
 
 // External share links (manifest.shareable.card): a read-only page of one
 // member's allergies, medications and emergency contacts, for a babysitter or
-// coach. This is health information every adult here can read and edit, so
+// coach. This is health information every adult here can read and edit (and
+// the care team can read), so
 // the manifest lets only household admins mint (`mint_roles: "admin"`, a 403
 // for anyone else) and the button is hidden for everyone else to match.
 const share = createShareHelper(window.__SHARE_CREATE_URL, window.__SHARE_REVOKE_URL, window.__SHARE_LIST_URL);
 const CAN_SHARE = share.enabled && IS_ADMIN;
+// In a co-parenting space the hub mints a link only to the steward's own or a
+// child's card (coparenting_child_supervision), the cards whose title
+// refreshCardNames can bring up to date first; the other parent's card is
+// theirs to share.
+function canShareLink(memberId) {
+  return CAN_SHARE && (!COPARENTING_STEWARD || canEditCard(memberId));
+}
 const shareView = createOverlayView(document);
 const shareUi = createShareUi({
   share,
@@ -274,6 +348,13 @@ const shareUi = createShareUi({
 shareView.bind(shareUi);
 
 let members     = [];
+let groups      = [];   // hub member groups (family.groups): who is on the care team
+let settings    = { care_team_group_id: null }; // app_config settings, admin-written
+// Whether the groups and the setting were read. Either one unread, the page
+// does not know who the care team is: it says nothing about it (labels only —
+// the cards listed are the hub's answer either way).
+let groupsRead   = !CONTEXT;
+let settingsRead = !DB;
 let profiles    = {};   // member_id  → profile row | null
 let allergies   = {};   // profile_id → allergy[]
 let medications = {};   // profile_id → medication[]
@@ -285,6 +366,37 @@ let modalEl = null;
 let accessDenied = false;
 // Set when the first read of the cards failed for any other reason.
 let loadFailed = false;
+// Set once the hub has answered the first read of every card.
+let profilesLoaded = false;
+// Set once the first read of the care-team setting has settled (either way).
+let careTeamChecked = !DB;
+// A care-team switch write still in flight: the switch waits for it.
+let careWriteInFlight = false;
+// Entries added on the page whose INSERT has not settled yet.
+const pendingInserts = new Set();
+// Writes (adds, edits, removes) sent through persist and not settled yet, by
+// the profile id of the card they change. The card is not printed meanwhile.
+const writesInFlight = new Map();
+// Entries, by row id, with a change through persist not settled yet: held from
+// the snapshot (before the optimistic change) until the write settles.
+const entriesInFlight = new Set();
+// Of those, the ones whose write failed: their recovery re-read shows what is
+// stored, so a re-read does not keep them as the page has them.
+const entriesFailed = new Set();
+// Entries whose write (INSERT, edit or remove) landed: `at`, the readSeq
+// current then, and `row`, the saved row (null once removed). A re-read that
+// started at or before `at` (and so may not see the write) keeps the saved
+// row, or keeps the entry absent. A failed write is never recorded.
+const landedAt = new Map();
+let readSeq = 0;
+// The reads not answered yet, by seq. Once none that began at or before a
+// landed write's `at` is out, every later read sees the write: forgotten.
+const openReads = new Set();
+function readDone(seq) {
+  openReads.delete(seq);
+  const oldest = Math.min(...openReads);
+  for (const [id, { at }] of landedAt) if (oldest > at) landedAt.delete(id);
+}
 
 // ── DB helper ────────────────────────────────────────────────────────────────
 async function db(sql, params = []) {
@@ -301,18 +413,155 @@ async function db(sql, params = []) {
   return json;
 }
 
-// Sends a write whose result is already on the card. If the hub refuses it,
-// the cards are read again so the page shows what is stored, and the member
-// is told the change did not save.
-async function persist(write) {
+// Several statements in one request: `{ statements }` → `{ results }`, one
+// per statement, in order. Reads are answered from manifest.preload when every
+// statement is preloaded; writes run as one atomic transaction.
+// The most statements the hub takes in one batch (MAX_APP_DB_BATCH_STATEMENTS).
+const BATCH_LIMIT = 25;
+async function dbBatch(statements) {
+  if (!DB) return statements.map(() => ({ rows: [] }));
+  const res = await fetch(DB, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ statements: statements.map(({ sql, params = [] }) => ({ sql, params })) }),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json || typeof json !== "object" || json.error || !Array.isArray(json.results)) {
+    throw Object.assign(new Error(json?.error || "Couldn’t reach the hub. Try again."), { status: res.status });
+  }
+  return json.results;
+}
+
+// A write the hub narrowed to nothing still answers 200 with `changed: 0`.
+// (The demo has no database and writes nothing.)
+function wroteNothing(res) {
+  return !!DB && Number(res?.changed ?? 0) === 0;
+}
+function entryOnPage(id) {
+  return !!id && [allergies, medications, contacts].some(byProfile =>
+    Object.values(byProfile).some(list => (list ?? []).some(r => r.id === id)));
+}
+
+// Sends a write whose result is already on the card. If the hub refuses it, or
+// it changed nothing, the cards are read again so the page shows what is
+// stored, and the member is told the change did not save. `rowId` names the
+// entry an UPDATE or DELETE targets: still there after the re-read, the hub
+// narrowed the write away from this member; gone, someone removed it.
+//
+// `insert` ({ table, kind, row }) marks an INSERT of the optimistic `row`
+// (kept on the card while it is in pendingInserts). An unknown outcome — no
+// status, a 400, a 5xx other than 507 — may have landed with its answer lost:
+// the row is read back by its id, and found, the INSERT succeeded.
+//
+// `before` (snapshotEntry) is the entry's last confirmed state, taken before
+// the optimistic change. When the write fails and the re-read fails too, the
+// entry goes back to it: a refused change must not stay on the card as if
+// saved (and print with it). A re-read that succeeds shows what is stored.
+async function persist(write, rowId = null, insert = null, before = null) {
+  const card = before?.pid ?? insert?.row.profile_id ?? null;
+  writesInFlight.set(card, (writesInFlight.get(card) ?? 0) + 1);
   try {
-    await write;
+    await settleWrite(write, rowId, insert, before);
+  } finally {
+    const left = (writesInFlight.get(card) ?? 1) - 1;
+    if (left > 0) writesInFlight.set(card, left);
+    else writesInFlight.delete(card);
+    entriesInFlight.delete(before?.id ?? rowId);
+    entriesFailed.delete(before?.id ?? rowId);
+    render();
+  }
+}
+// persist's body: what the hub answered decides what the card shows.
+async function settleWrite(write, rowId, insert, before) {
+  let res;
+  try {
+    res = await write;
   } catch (e) {
     console.error(e);
-    await loadAllProfileData().catch(() => {});
+    if (insert && outcomeUnknown(e) && await rowStored(insert.table, insert.row.id)) {
+      insertLanded(insert);
+      return;
+    }
+    if (insert) pendingInserts.delete(insert.row.id);
+    entriesFailed.add(before?.id ?? rowId);
+    if (!await reread()) restoreConfirmed(before);
     render();
-    hubAlert("That change could not be saved. Try again.");
+    hubAlert(failureLine(e, { action: "save that change" }));
+    return;
   }
+  if (!wroteNothing(res)) {
+    if (insert) insertLanded(insert);
+    else if (before) changeLanded(before);
+    return;
+  }
+  if (insert) pendingInserts.delete(insert.row.id);
+  console.error("write changed nothing", rowId);
+  entriesFailed.add(before?.id ?? rowId);
+  const readBack = await reread();
+  if (!readBack) restoreConfirmed(before);
+  render();
+  hubAlert(!readBack || !rowId
+    ? failureLine(null, { action: "save that change" })
+    : entryOnPage(rowId)
+      ? "You don’t have permission to change that entry."
+      : "That entry has been removed.");
+}
+
+// The recovery re-read of persist: true when the hub answered it with the
+// cards. A refusal (403) is caught by loadAllProfileData, which sets
+// accessDenied and leaves the lists as they were — nothing was refreshed, so
+// that is a failed recovery too, and the refused change is put back.
+async function reread() {
+  try {
+    await loadAllProfileData();
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
+  return !accessDenied;
+}
+function entryLists(kind) {
+  return kind === "allergies" ? allergies : kind === "medications" ? medications : contacts;
+}
+// An entry's last confirmed state on card `pid`, for persist's `before`.
+// The entry is held (entriesInFlight) until persist settles the write.
+function snapshotEntry(kind, pid, id) {
+  entriesInFlight.add(id);
+  return { kind, pid, ...entrySnapshot(entryLists(kind)[pid], id) };
+}
+function restoreConfirmed(before) {
+  if (!before) return;
+  const byProfile = entryLists(before.kind);
+  byProfile[before.pid] = restoreEntry(byProfile[before.pid], before);
+}
+
+function outcomeUnknown(e) {
+  const status = e?.status;
+  return !status || status === 400 || (status >= 500 && status !== 507);
+}
+async function rowStored(table, id) {
+  try {
+    const { rows } = await db(`SELECT id FROM ${table} WHERE id = ?`, [id]);
+    return (rows ?? []).some(r => r.id === id);
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
+}
+// The success path of an INSERT: no longer pending, kept by any re-read
+// already in flight, and back on its card if a re-read dropped it meanwhile.
+function insertLanded({ kind, row }) {
+  pendingInserts.delete(row.id);
+  landedAt.set(row.id, { at: readSeq, row });
+  const byProfile = entryLists(kind);
+  const list = (byProfile[row.profile_id] ??= []);
+  if (!list.some(r => r.id === row.id)) list.push(row);
+}
+// The success path of an edit or remove: the entry as the page has it (held
+// there while the write was in flight) is what is stored, or it is gone.
+function changeLanded({ kind, pid, id }) {
+  const row = (entryLists(kind)[pid] ?? []).find(r => r.id === id) ?? null;
+  landedAt.set(id, { at: readSeq, row });
 }
 
 // ── Modal helpers ────────────────────────────────────────────────────────────
@@ -336,11 +585,75 @@ async function loadMembers() {
     ];
     return;
   }
-  const res = await fetch(`${CONTEXT}?keys=family.members`);
-  const ctx = await res.json().catch(() => null);
-  if (!res.ok || !ctx || typeof ctx !== "object" || ctx.$errors?.length) throw new Error("Couldn’t reach the hub. Try again.");
-  members = ctx["family.members"] ?? [];
+  const ctx = await fetchContext("family.members,family.groups");
+  // A 200 can still name a key the hub failed to read. The members are the
+  // page; the groups only label it, so a failed read of them is "unknown".
+  if (!ctx.members) throw new Error("Couldn’t reach the hub. Try again.");
+  members = ctx.members;
+  // The groups decide who is on the care team — for the page's labels only:
+  // the hub decides which cards a member reads, and the page lists them all.
+  ({ groups, groupsRead } = ctx);
 }
+// One context read. `members` is unset when the hub failed to answer or named
+// family.members in $errors; the groups are unread (and empty) when it failed,
+// named family.groups there, or sent something that is not a list.
+async function fetchContext(keys) {
+  const res = await fetch(`${CONTEXT}?keys=${keys}`);
+  const ctx = await res.json().catch(() => null);
+  const ok = res.ok && !!ctx && typeof ctx === "object" && !ctx.error;
+  const errors = ok && Array.isArray(ctx.$errors) ? ctx.$errors : [];
+  const read = (key) => ok && !errors.includes(key);
+  const groupsRead = read("family.groups") && Array.isArray(ctx["family.groups"]);
+  return {
+    members: read("family.members") ? (ctx["family.members"] ?? []) : undefined,
+    groups: groupsRead ? ctx["family.groups"] : [],
+    groupsRead,
+  };
+}
+
+// ── Care team ────────────────────────────────────────────────────────────────
+// The hub member group an admin named as the care team (app_config settings,
+// readable by every member, written through the hub's admin-config endpoint
+// alone). Its members read every card marked "care": the hub's row policy
+// decides that (privileged_groups, select only); these helpers only keep the
+// page's headings and controls on the same rule.
+function readSettings(rows) {
+  settings = { ...settings, care_team_group_id: null };
+  for (const r of rows ?? []) if (r.key === "care_team_group_id") settings.care_team_group_id = r.value || null;
+}
+// Read on its own, not with the cards: a failed or refused read of the setting
+// leaves the care team unknown (no labels), never the cards unread.
+async function loadSettings() {
+  if (!DB) return;
+  try {
+    const { rows } = await db("SELECT key, value FROM app_health_cards__settings WHERE key = 'care_team_group_id'");
+    readSettings(rows);
+    settingsRead = true;
+  } catch (e) {
+    settings = { ...settings, care_team_group_id: null };
+    settingsRead = false;
+    throw e;
+  }
+}
+// The groups read again on their own (Try again on "Couldn’t check the care team").
+async function loadGroups() {
+  if (!CONTEXT) return;
+  ({ groups, groupsRead } = await fetchContext("family.groups"));
+  if (!groupsRead) throw new Error("care team groups unread");
+}
+window.retryCareTeam = async function() {
+  await Promise.all([
+    settingsRead ? null : loadSettings(),
+    groupsRead ? null : loadGroups(),
+  ]).catch(e => console.error("care team still unread", e));
+  render();
+};
+function careTeamKnown() { return groupsRead && settingsRead; }
+function careTeamGroup() {
+  return groups.find(g => g.id === settings.care_team_group_id) ?? null;
+}
+function careTeamConfigured() { return !!careTeamGroup(); }
+function onCareTeam() { return isCareTeamMember(HUB_MEMBER, groups, settings.care_team_group_id); }
 
 async function loadProfileData(memberId) {
   if (!DB) {
@@ -369,33 +682,58 @@ async function loadProfileData(memberId) {
     return;
   }
 
-  const profileRes = await db(
-    "SELECT * FROM app_health_cards__health_profiles WHERE member_id = ? LIMIT 1",
-    [memberId]
-  );
+  // One request: the entries are scoped to the card by a JOIN (not
+  // `profile_id IN (SELECT …)`, which the row-policy rewriter refuses), so
+  // they need not wait for the card's id.
+  const seq = ++readSeq;
+  openReads.add(seq);
+  try {
+    const [profileRes, ar, mr, cr] = await dbBatch([
+      { sql: "SELECT * FROM app_health_cards__health_profiles WHERE member_id = ? LIMIT 1", params: [memberId] },
+      { sql: "SELECT a.* FROM app_health_cards__health_allergies a JOIN app_health_cards__health_profiles p ON p.id = a.profile_id AND p.member_id = ? ORDER BY a.sort_order, a.created_at", params: [memberId] },
+      { sql: "SELECT m.* FROM app_health_cards__health_medications m JOIN app_health_cards__health_profiles p ON p.id = m.profile_id AND p.member_id = ? ORDER BY m.created_at", params: [memberId] },
+      { sql: "SELECT c.* FROM app_health_cards__health_contacts c JOIN app_health_cards__health_profiles p ON p.id = c.profile_id AND p.member_id = ? ORDER BY c.priority, c.created_at", params: [memberId] },
+    ]);
 
-  if (profileRes.rows.length === 0) {
-    profiles[memberId] = null;
-    return;
+    const profile = (profileRes.rows ?? [])[0];
+    if (!profile || !isSafeId(profile.id) || !isSafeId(profile.member_id)) {
+      profiles[memberId] = null;
+      return;
+    }
+    profiles[memberId] = profile;
+    const pid = profile.id;
+    const safe = (res) => (res.rows ?? []).filter(r => isSafeId(r.id) && r.profile_id === pid);
+
+    allergies[pid]   = withPending(allergies[pid], safe(ar), seq);
+    medications[pid] = withPending(medications[pid], safe(mr), seq);
+    contacts[pid]    = withPending(contacts[pid], safe(cr), seq);
+  } finally {
+    readDone(seq);
   }
+}
 
-  const profile = profileRes.rows[0];
-  if (!isSafeId(profile.id) || !isSafeId(profile.member_id)) {
-    profiles[memberId] = null;
-    return;
+// A re-read rebuilds the lists from the hub, which cannot return an entry
+// whose INSERT has not landed yet. `fresh` plus the entries of `before` still
+// in pendingInserts that the hub did not return, so an optimistic row stays
+// on the card until its INSERT settles (persist then re-reads on a failure),
+// and one that landed after this read (`seq`) began. An entry with an edit or
+// remove in flight (entriesInFlight, its write not failed) stays as `before`
+// has it — the edited row, or absent — until that write settles: a re-read
+// for another entry's failure must not put back its old value. Nor, once it
+// has settled, may a read that began before it landed: such an entry
+// (landedAt) is its saved row, or absent if removed.
+function withPending(before, fresh, seq) {
+  const held = (id) => entriesInFlight.has(id) && !entriesFailed.has(id);
+  const landed = (id) => { const l = landedAt.get(id); return l && l.at >= seq ? l : null; };
+  const page = new Map((before ?? []).map(row => [row.id, row]));
+  // Held and not on the page, or landed as removed: left out.
+  const kept = (r) => held(r.id) ? page.get(r.id) : landed(r.id) ? landed(r.id).row : r;
+  const merged = fresh.map(kept).filter(Boolean);
+  for (const row of before ?? []) {
+    const keep = pendingInserts.has(row.id) ? row : landed(row.id)?.row;
+    if (keep && !merged.some(r => r.id === keep.id)) merged.push(keep);
   }
-  profiles[memberId] = profile;
-  const pid = profile.id;
-
-  const [ar, mr, cr] = await Promise.all([
-    db("SELECT * FROM app_health_cards__health_allergies WHERE profile_id = ? ORDER BY sort_order, created_at", [pid]),
-    db("SELECT * FROM app_health_cards__health_medications WHERE profile_id = ? ORDER BY created_at", [pid]),
-    db("SELECT * FROM app_health_cards__health_contacts WHERE profile_id = ? ORDER BY priority, created_at", [pid]),
-  ]);
-
-  allergies[pid]   = (ar.rows ?? []).filter(r => isSafeId(r.id) && isSafeId(r.profile_id));
-  medications[pid] = (mr.rows ?? []).filter(r => isSafeId(r.id) && isSafeId(r.profile_id));
-  contacts[pid]    = (cr.rows ?? []).filter(r => isSafeId(r.id) && isSafeId(r.profile_id));
+  return merged;
 }
 
 async function loadAllProfileData() {
@@ -405,56 +743,92 @@ async function loadAllProfileData() {
   }
 
   // A refusal is not "no health information on file for anyone" — a different
-  // and dangerously reassuring statement. Every table here is `adult_only`, so
-  // the hub refuses even the SELECT for a non-adult (403). The app's audience
-  // is `adults` and normally nobody else gets this far, but an admin can grant
-  // a member access individually ("Granted" in the hub's Member access panel),
-  // which is checked BEFORE the audience rule. Any other failure is rethrown
-  // for the caller to report.
+  // and dangerously reassuring statement. The hub answers these reads with the
+  // rows the member may see (an adult: every card; a guest or a child: their
+  // own card and, on the care team, the cards marked for it) and refuses them
+  // outright (403) only when the member may not read the table at all. Any
+  // other failure is rethrown for the caller to report.
   let pr, ar, mr, cr;
+  const seq = ++readSeq;
+  openReads.add(seq);
   try {
-    [pr, ar, mr, cr] = await Promise.all([
-      db("SELECT * FROM app_health_cards__health_profiles ORDER BY created_at"),
-      db("SELECT * FROM app_health_cards__health_allergies ORDER BY profile_id, sort_order, created_at"),
-      db("SELECT * FROM app_health_cards__health_medications ORDER BY profile_id, created_at"),
-      db("SELECT * FROM app_health_cards__health_contacts ORDER BY profile_id, priority, created_at"),
-    ]);
-  } catch (e) {
-    if (e.status !== 403) throw e;
-    accessDenied = true;
-    return;
-  }
+    try {
+      [pr, ar, mr, cr] = await dbBatch([
+        { sql: "SELECT * FROM app_health_cards__health_profiles ORDER BY created_at" },
+        { sql: "SELECT * FROM app_health_cards__health_allergies ORDER BY profile_id, sort_order, created_at" },
+        { sql: "SELECT * FROM app_health_cards__health_medications ORDER BY profile_id, created_at" },
+        { sql: "SELECT * FROM app_health_cards__health_contacts ORDER BY profile_id, priority, created_at" },
+      ]);
+    } catch (e) {
+      if (e.status !== 403) throw e;
+      accessDenied = true;
+      return;
+    }
+    profilesLoaded = true;
 
-  profiles = Object.fromEntries(members.map(m => [m.id, null]));
-  allergies = {};
-  medications = {};
-  contacts = {};
+    const before = { allergies, medications, contacts };
+    profiles = Object.fromEntries(members.map(m => [m.id, null]));
+    allergies = {};
+    medications = {};
+    contacts = {};
 
-  for (const profile of pr.rows ?? []) {
-    if (isSafeId(profile.id) && isSafeId(profile.member_id)) profiles[profile.member_id] = profile;
-  }
-  for (const allergy of ar.rows ?? []) {
-    if (isSafeId(allergy.id) && isSafeId(allergy.profile_id)) (allergies[allergy.profile_id] ??= []).push(allergy);
-  }
-  for (const medication of mr.rows ?? []) {
-    if (isSafeId(medication.id) && isSafeId(medication.profile_id)) (medications[medication.profile_id] ??= []).push(medication);
-  }
-  for (const contact of cr.rows ?? []) {
-    if (isSafeId(contact.id) && isSafeId(contact.profile_id)) (contacts[contact.profile_id] ??= []).push(contact);
+    for (const profile of pr.rows ?? []) {
+      if (isSafeId(profile.id) && isSafeId(profile.member_id)) profiles[profile.member_id] = profile;
+    }
+    for (const allergy of ar.rows ?? []) {
+      if (isSafeId(allergy.id) && isSafeId(allergy.profile_id)) (allergies[allergy.profile_id] ??= []).push(allergy);
+    }
+    for (const medication of mr.rows ?? []) {
+      if (isSafeId(medication.id) && isSafeId(medication.profile_id)) (medications[medication.profile_id] ??= []).push(medication);
+    }
+    for (const contact of cr.rows ?? []) {
+      if (isSafeId(contact.id) && isSafeId(contact.profile_id)) (contacts[contact.profile_id] ??= []).push(contact);
+    }
+    for (const [kind, fresh] of [["allergies", allergies], ["medications", medications], ["contacts", contacts]]) {
+      for (const [pid, list] of Object.entries(before[kind])) {
+        const merged = withPending(list, fresh[pid] ?? [], seq);
+        if (merged.length || fresh[pid]) fresh[pid] = merged;
+      }
+    }
+  } finally {
+    readDone(seq);
   }
 }
 
-async function ensureProfile(memberId) {
-  if (profiles[memberId]) return profiles[memberId];
+// Single-flight per member: concurrent callers (an add while the care-team
+// switch creates the card) share one INSERT or recovery and the same object.
+const profileCreations = new Map(); // member_id → in-flight createProfile
+function ensureProfile(memberId) {
+  if (profiles[memberId]) return Promise.resolve(profiles[memberId]);
+  let creating = profileCreations.get(memberId);
+  if (!creating) {
+    creating = createProfile(memberId).finally(() => profileCreations.delete(memberId));
+    profileCreations.set(memberId, creating);
+  }
+  return creating;
+}
+
+async function createProfile(memberId) {
   const id  = crypto.randomUUID();
   const now = new Date().toISOString();
   const member = members.find(m => m.id === memberId) ?? { id: memberId };
   const insert = profileInsert(id, member, now);
-  await db(insert.sql, insert.params);
-  profiles[memberId] = { id, member_id: memberId, notes: "", card_name: insert.cardName ?? "" };
-  allergies[id]   = [];
-  medications[id] = [];
-  contacts[id]    = [];
+  try {
+    await db(insert.sql, insert.params);
+  } catch (e) {
+    // The card may already be on the hub: another adult made it first (the
+    // UNIQUE member_id), or this INSERT landed and its answer was lost. What
+    // is stored decides — use it if there is one.
+    const stored = await loadProfileData(memberId).then(() => profiles[memberId], () => null);
+    if (stored) return stored;
+    throw e;
+  }
+  // A re-read that landed meanwhile may already hold the stored card.
+  profiles[memberId] ??= { id, member_id: memberId, notes: "", card_name: insert.cardName ?? "", visibility: VISIBILITY_ADULTS };
+  const pid = profiles[memberId].id;
+  allergies[pid]   ??= [];
+  medications[pid] ??= [];
+  contacts[pid]    ??= [];
   return profiles[memberId];
 }
 
@@ -465,22 +839,60 @@ async function ensureProfile(memberId) {
  * failed write leaves the old name and is retried on the next load.
  */
 async function refreshCardNames(only) {
-  if (!DB || accessDenied) return;
-  const updates = cardNameUpdates(profiles, only ? members.filter(m => m.id === only) : members);
-  await Promise.all(updates.map(async ({ id, cardName }) => {
-    const res = await db("UPDATE app_health_cards__health_profiles SET card_name = ? WHERE id = ?", [cardName, id])
-      .catch(() => null);
-    if (!res || res.error) return;
-    const profile = Object.values(profiles).find(p => p?.id === id);
-    if (profile) profile.card_name = cardName;
-  }));
+  if (!DB || accessDenied || !IS_ADULT) return;
+  // Only the cards this member may change (canEditCard): the rest would each
+  // answer `changed: 0`. In a co-parenting space that leaves the other
+  // parent's card to them (the hub bounds a steward's writes to their own and
+  // a child's cards), so its title refreshes on their next load.
+  const mine = members.filter(m => canEditCard(m.id) && (!only || m.id === only));
+  const updates = cardNameUpdates(profiles, mine);
+  // Batches of up to 25 cards (the hub's limit on statements per batch), so
+  // the hub's per-request work (and, in a co-parenting space, its child-roster
+  // read) is paid once per batch. A batch is all or nothing, so one the hub
+  // REFUSES (400/403: some card it turns down) is retried a card at a time, one
+  // after another, so that card never holds back the rest. A hub that is
+  // failing or rate-limiting is not sent more: every old name stays until the
+  // next load.
+  for (let i = 0; i < updates.length; i += BATCH_LIMIT) {
+    const chunk = updates.slice(i, i + BATCH_LIMIT);
+    const statements = chunk.map(({ id, cardName }) => ({
+      sql: "UPDATE app_health_cards__health_profiles SET card_name = ? WHERE id = ?", params: [cardName, id],
+    }));
+    const isRefusal = e => e?.status === 400 || e?.status === 403;
+    let results;
+    let hubFailing = false;
+    try {
+      results = await dbBatch(statements);
+    } catch (e) {
+      if (!isRefusal(e)) return;
+      results = [];
+      for (const { sql, params } of statements) {
+        try {
+          results.push(await db(sql, params));
+        } catch (err) {
+          results.push(null);
+          // Stop on a failing or rate-limiting hub; the names written so far
+          // still land below.
+          if (!isRefusal(err)) { hubFailing = true; break; }
+        }
+      }
+    }
+    chunk.forEach(({ id, cardName }, j) => {
+      if (!results[j] || wroteNothing(results[j])) return;
+      const profile = Object.values(profiles).find(p => p?.id === id);
+      if (profile) profile.card_name = cardName;
+    });
+    if (hubFailing) return;
+  }
 }
 
 // ── Severity helpers ─────────────────────────────────────────────────────────
 
 // ── Render ───────────────────────────────────────────────────────────────────
 function render() {
-  if (selectedMemberId) renderDetail();
+  // Refused reads show the access-denied view even over an open card, so
+  // nothing read before the refusal stays on screen (or printable).
+  if (selectedMemberId && !accessDenied) renderDetail();
   else renderList();
 }
 
@@ -507,7 +919,18 @@ function renderList() {
       </div>`;
     return;
   }
-  const cards = members.map(m => {
+  // A guest or a child is shown the cards the hub let them read, once it has
+  // answered — their own, and the care team's — never a list of the household
+  // with "No allergies on file" against every member they cannot read. The
+  // hub's SELECT decides: every card it returned is listed, whatever the
+  // page's copy of the care-team rule (groups, setting) says.
+  if (!IS_ADULT && !profilesLoaded) {
+    document.getElementById("app").innerHTML =
+      `<div class="container"><p class="subtitle" style="margin-top:40px">Loading…</p></div>`;
+    return;
+  }
+  const listed = IS_ADULT ? members : members.filter(m => !!profiles[m.id]);
+  const cards = listed.map(m => {
     const profileLoaded = m.id in profiles;
     const pid = profiles[m.id]?.id;
     const al  = pid ? (allergies[pid] ?? []) : [];
@@ -525,32 +948,203 @@ function renderList() {
           <div class="member-name">${esc(m.name)}</div>
           <div class="member-role">${esc(m.role)}</div>
         </div>
+        ${IS_ADULT && isCareProfile(profiles[m.id]) ? `<span class="badge-care" data-testid="care-badge">Care team</span>` : ""}
         ${badge}
         <span class="chevron">›</span>
       </button>`;
   }).join("");
 
+  // The care team group is the admin's to choose (the hub's admin-config
+  // endpoint refuses anyone else), and the hub is where the setting lives.
+  // Not offered while the groups or the setting are unread: the modal would
+  // show "no groups" or "no care team" for what is only unknown.
+  // A failed read of either is said to the admin, with a way to read it again.
+  const careTeamBtn = !(IS_ADMIN && DB && ADMIN_CONFIG_URL) ? ""
+    : careTeamKnown()
+      ? `<div class="header-actions"><button class="btn-ghost" data-testid="care-team-settings" onclick="openCareTeamModal()">Care team${careTeamConfigured() ? `: ${esc(careTeamGroup().name)}` : ""}</button></div>`
+      : careTeamChecked
+        ? `<div class="load-error" data-testid="care-team-error" role="alert"><span>Couldn’t check the care team.</span> <button type="button" class="load-error-retry" data-testid="care-team-retry" onclick="retryCareTeam()">Try again</button></div>`
+        : "";
+  const sharedWithMe = listed.some(m => m.id !== HUB_MEMBER?.id);
+  const subtitle = IS_ADULT
+    ? "Allergy &amp; emergency information for your family"
+    : onCareTeam()
+      ? "The cards shared with the care team, and your own"
+      : sharedWithMe
+        ? "The health cards shared with you"
+        : "Your own health card";
+  const empty = IS_ADULT ? "No family members found." : "No health cards are shared with you.";
+
   document.getElementById("app").innerHTML = `
     <div class="container">
       <div class="page-header">
         <h1>Health Cards</h1>
-        <p class="subtitle">Allergy &amp; emergency information for your family</p>
+        <p class="subtitle">${subtitle}</p>
+        ${careTeamBtn}
       </div>
       <div class="member-list">
-        ${members.length === 0 ? '<p class="empty-text">No family members found.</p>' : cards}
+        ${listed.length === 0 ? `<p class="empty-text">${empty}</p>` : cards}
       </div>
     </div>`;
 }
+
+// ── Care team controls ───────────────────────────────────────────────────────
+// Whether a card is shared with the care team. Offered once an admin has
+// chosen the group, on the viewer's own card and on a child's
+// (canShareCard) — never on another adult's own card. That is the page's
+// rule: the hub takes the column from any adult who sees the card
+// (column_write_acls visibility: adult). A card with nothing on it yet is
+// created first, as adding an entry would.
+function careRowHtml(profile) {
+  if (!canShareCard(selectedMemberId)) return "";
+  if (careTeamConfigured()) {
+    const on = isCareProfile(profile);
+    return `
+      <label class="care-row" data-testid="care-row">
+        <input type="checkbox" data-testid="care-toggle" ${on ? "checked" : ""} ${careWriteInFlight ? "disabled" : ""} onchange="setCareTeamSharing(this.checked)" />
+        <div>
+          <div><strong>Share with the care team</strong> (${esc(careTeamGroup().name)})</div>
+          <div class="care-hint">Its members read this card — the allergies, emergency medications and contacts — and change nothing. Each adult chooses this for their own card; the adults choose it for the children's.</div>
+        </div>
+      </label>`;
+  }
+  // A card still shared while no care team group is set (never chosen,
+  // cleared, deleted, or unread): it can always be taken back, so the next
+  // group picked does not inherit old shares unseen. Sharing a card anew
+  // waits for a group.
+  if (isCareProfile(profile)) {
+    return `
+      <div class="care-row" data-testid="care-row">
+        <div>
+          <div><strong>Shared with the care team</strong></div>
+          <div class="care-hint">This card is still marked for the care team, so whichever group is chosen as the care team reads it. Stop sharing to keep it with the adults.</div>
+        </div>
+        <button class="btn-secondary" data-testid="care-unshare" ${careWriteInFlight ? "disabled" : ""} onclick="setCareTeamSharing(false)">Stop sharing</button>
+      </div>`;
+  }
+  if (!careTeamKnown()) return "";
+  const hint = IS_ADMIN
+    ? `No care team yet. Choose a member group under <strong>Care team</strong> on the front page to share a card with a nanny or a grandparent who signs in.`
+    : `A card can also be shared with a care team (a nanny, a grandparent who signs in) once an admin chooses that group under <strong>Care team</strong> on the front page.`;
+  return `<div class="care-row" data-testid="care-hint"><div class="care-hint">${hint}</div></div>`;
+}
+
+window.setCareTeamSharing = async function(on) {
+  if (!canShareCard(selectedMemberId) || careWriteInFlight) return;
+  if (on && !careTeamConfigured()) return;
+  const visibility = on ? VISIBILITY_CARE : VISIBILITY_ADULTS;
+  const memberId = selectedMemberId;
+  let profileId = null;
+  careWriteInFlight = true;
+  // A re-read during an await replaces the profile objects: set and roll back
+  // the one on the page now, if it is still this card.
+  const setVisibility = (value) => {
+    const current = profiles[memberId];
+    if (current?.id === profileId) current.visibility = value;
+  };
+  try {
+    const profile = await ensureProfile(memberId);
+    profileId = profile.id;
+    const before = profile.visibility;
+    setVisibility(visibility);
+    render();
+    let res;
+    try {
+      res = await db("UPDATE app_health_cards__health_profiles SET visibility = ? WHERE id = ?", [visibility, profileId]);
+    } catch (e) {
+      setVisibility(before);
+      throw e;
+    }
+    if (wroteNothing(res)) {
+      setVisibility(before);
+      throw Object.assign(new Error("visibility update changed nothing"), { changedNothing: true });
+    }
+  } catch (e) {
+    console.error(e);
+    const reread = await loadAllProfileData().then(() => true, () => false);
+    const stillThere = Object.values(profiles).some(p => p?.id === profileId);
+    hubAlert(e?.changedNothing && reread
+      ? stillThere ? "You don’t have permission to change who reads this card." : "This card has been removed."
+      : failureLine(e, { action: "change who reads this card" }));
+  } finally {
+    careWriteInFlight = false;
+    render();
+  }
+};
+
+// Which hub member group is the care team. Saved through the hub's
+// admin-config endpoint (manifest admin_config), which only an admin may call;
+// the page offers the control to an admin alone. Members are put in the
+// group in the hub's member settings. Medications keeps its own setting under
+// the same key name; each app's choice is its own.
+window.openCareTeamModal = function() {
+  if (!IS_ADMIN) return;
+  const current = settings.care_team_group_id ?? "";
+  const options = groups.map(g =>
+    `<option value="${esc(g.id)}" ${g.id === current ? "selected" : ""}>${esc(g.name)}</option>`).join("");
+  openModal(`
+    <h2>Care team</h2>
+    <p class="care-hint" style="margin-bottom:14px">
+      Members of this group read every card marked <strong>Share with the care team</strong>
+      — a nanny or a grandparent who signs in — and change nothing. They never see a card that is not shared with them.
+      Medications has its own Care team setting — choose the same group there.
+    </p>
+    <div class="form-field">
+      <label>Group</label>
+      <select id="f-care-team-group" data-testid="f-care-team-group">
+        <option value="" ${current ? "" : "selected"}>— No care team —</option>
+        ${options}
+      </select>
+      <div class="care-hint">
+        ${groups.length ? "Who is in a group is set in the hub's member settings." : "There are no member groups yet. Create one in the hub's member settings first."}
+        Each member of the group also needs Health Cards itself: a guest gets it by having Health Cards ticked in their invite; a child needs the app given to them in the hub's member settings, since it is for the adults by default.
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" data-testid="save-care-team" onclick="saveCareTeam()">Save</button>
+    </div>`);
+};
+
+window.saveCareTeam = async function() {
+  const value = document.getElementById("f-care-team-group")?.value ?? "";
+  const btn = modalEl?.querySelector(".modal-actions .btn-primary");
+  if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+  try {
+    const res = await fetch(ADMIN_CONFIG_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "care_team_group_id", value }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body || typeof body !== "object" || body.error) {
+      throw Object.assign(new Error(body?.error || `Request failed (${res.status})`), { status: res.status });
+    }
+    // What is stored decides, not what was sent: a lost answer may have landed.
+    await loadSettings().catch(() => { settings.care_team_group_id = value || null; settingsRead = true; });
+    closeModal();
+    render();
+  } catch (e) {
+    console.error(e);
+    if (btn) { btn.disabled = false; btn.textContent = "Save"; }
+    hubAlert(failureLine(e, { action: "choose the care team" }));
+  }
+};
 
 function renderDetail() {
   const member = members.find(m => m.id === selectedMemberId);
   if (!member) { selectedMemberId = null; render(); return; }
 
-  const pid = profiles[selectedMemberId]?.id;
+  const profile = profiles[selectedMemberId] ?? null;
+  const pid = profile?.id;
   const al  = pid ? (allergies[pid]   ?? []) : [];
   const ml  = pid ? (medications[pid] ?? []) : [];
   const cl  = pid ? (contacts[pid]    ?? []) : [];
   const color = memberColor(member.id, members);
+  // A guest or a child reads the card and prints it; the hub refuses their
+  // writes, so no edit, add or remove control is drawn for them.
+  const canEdit = canEditCard(member.id);
+  const addBtn = (fn) => canEdit ? `<button class="btn-add" onclick="${fn}()">+ Add</button>` : "";
 
   const allergyRows = al.map(a => `
     <div class="entry-card">
@@ -559,10 +1153,10 @@ function renderDetail() {
           ${esc(a.name)}
           <span class="severity-badge ${SEV_CLASS[a.severity] ?? ""}">${SEV_LABEL[a.severity] ?? esc(a.severity)}</span>
         </div>
-        <div class="entry-actions">
+        ${canChangeEntry(a) ? `<div class="entry-actions">
           <button class="btn-icon" onclick="openAllergyModal('${esc(a.id)}')">Edit</button>
           <button class="btn-icon btn-danger" onclick="deleteAllergy('${esc(a.id)}')">Remove</button>
-        </div>
+        </div>` : ""}
       </div>
       ${a.triggers       ? `<div class="entry-field"><strong>Triggers:</strong> ${esc(a.triggers)}</div>` : ""}
       ${a.symptoms       ? `<div class="entry-field"><strong>Reaction signs:</strong> ${esc(a.symptoms)}</div>` : ""}
@@ -576,10 +1170,10 @@ function renderDetail() {
           ${esc(m.name)}
           ${m.dose ? `<span class="dose">${esc(m.dose)}</span>` : ""}
         </div>
-        <div class="entry-actions">
+        ${canChangeEntry(m) ? `<div class="entry-actions">
           <button class="btn-icon" onclick="openMedicationModal('${esc(m.id)}')">Edit</button>
           <button class="btn-icon btn-danger" onclick="deleteMedication('${esc(m.id)}')">Remove</button>
-        </div>
+        </div>` : ""}
       </div>
       ${m.when_to_give ? `<div class="entry-field"><strong>When to give:</strong> ${esc(m.when_to_give)}</div>` : ""}
       ${m.location     ? `<div class="entry-field"><strong>Location:</strong> ${esc(m.location)}</div>` : ""}
@@ -594,10 +1188,10 @@ function renderDetail() {
           ${esc(c.name)}
           ${c.relationship ? `<span class="contact-rel">· ${esc(c.relationship)}</span>` : ""}
         </div>
-        <div class="entry-actions">
+        ${canChangeEntry(c) ? `<div class="entry-actions">
           <button class="btn-icon" onclick="openContactModal('${esc(c.id)}')">Edit</button>
           <button class="btn-icon btn-danger" onclick="deleteContact('${esc(c.id)}')">Remove</button>
-        </div>
+        </div>` : ""}
       </div>
       ${c.phone ? `<div class="entry-field"><a href="tel:${esc(c.phone)}" class="phone-link">${esc(c.phone)}</a></div>` : ""}
     </div>`).join("");
@@ -609,20 +1203,22 @@ function renderDetail() {
         <div class="detail-member">
           <div class="member-avatar-lg" style="background:${esc(color)}">${esc(initial(member.name))}</div>
           <div>
-            <div class="detail-name">${esc(member.name)}</div>
+            <div class="detail-name">${esc(member.name)}${IS_ADULT && isCareProfile(profile) ? ` <span class="badge-care" data-testid="care-badge">Care team</span>` : ""}</div>
             <div class="detail-role">${esc(member.role)}</div>
           </div>
         </div>
         <div class="detail-actions">
-          ${CAN_SHARE && pid ? `<button class="btn-secondary" onclick="shareCard()" data-testid="card-share">Share</button>` : ""}
-          <button class="btn-primary" onclick="printCard()">Print Card</button>
+          ${canShareLink(member.id) && pid ? `<button class="btn-secondary" onclick="shareCard()" data-testid="card-share">Share</button>` : ""}
+          <button class="btn-primary" data-testid="card-print" onclick="printCard()" ${printReady(writesInFlight, pid, careWriteInFlight) ? "" : "disabled"}>Print Card</button>
         </div>
       </div>
+
+      ${careRowHtml(profile)}
 
       <section class="section">
         <div class="section-header">
           <h2>Allergies</h2>
-          <button class="btn-add" onclick="openAllergyModal()">+ Add</button>
+          ${addBtn("openAllergyModal")}
         </div>
         ${al.length === 0 ? '<p class="empty-text">No allergies on file.</p>' : allergyRows}
       </section>
@@ -630,7 +1226,7 @@ function renderDetail() {
       <section class="section">
         <div class="section-header">
           <h2>Emergency Medications</h2>
-          <button class="btn-add" onclick="openMedicationModal()">+ Add</button>
+          ${addBtn("openMedicationModal")}
         </div>
         ${ml.length === 0 ? '<p class="empty-text">No emergency medications on file.</p>' : medRows}
       </section>
@@ -638,7 +1234,7 @@ function renderDetail() {
       <section class="section">
         <div class="section-header">
           <h2>Emergency Contacts</h2>
-          <button class="btn-add" onclick="openContactModal()">+ Add</button>
+          ${addBtn("openContactModal")}
         </div>
         ${cl.length === 0 ? '<p class="empty-text">No contacts on file.</p>' : contactRows}
       </section>
@@ -654,7 +1250,7 @@ window.goBack = () => { selectedMemberId = null; render(); };
 window.shareCard = async function() {
   const member = members.find(m => m.id === selectedMemberId);
   const profile = profiles[selectedMemberId];
-  if (!CAN_SHARE || !member || !profile) return;
+  if (!member || !profile || !canShareLink(member.id)) return;
   await refreshCardNames(member.id);
   shareUi.open({ id: profile.id, title: member.name });
 };
@@ -678,8 +1274,10 @@ window.selectMember = async function(memberId) {
 
 // ── Allergy CRUD ─────────────────────────────────────────────────────────────
 window.openAllergyModal = function(allergyId) {
+  if (!canEditCard(selectedMemberId)) return;
   const pid = profiles[selectedMemberId]?.id;
   const ex  = allergyId ? (allergies[pid] ?? []).find(a => a.id === allergyId) : null;
+  if (allergyId && !canChangeEntry(ex)) return;
   openModal(`
     <h2>${ex ? "Edit Allergy" : "Add Allergy"}</h2>
     <div class="form-field">
@@ -729,6 +1327,7 @@ window.submitAllergyForm = async function(allergyId) {
     const now = new Date().toISOString();
 
     if (allergyId) {
+      const before = snapshotEntry("allergies", pid, allergyId);
       const idx = (allergies[pid] ?? []).findIndex(a => a.id === allergyId);
       if (idx >= 0) allergies[pid][idx] = { ...allergies[pid][idx], name, severity, triggers, symptoms, response_steps: steps };
       closeModal();
@@ -736,38 +1335,48 @@ window.submitAllergyForm = async function(allergyId) {
       persist(db(
         "UPDATE app_health_cards__health_allergies SET name = ?, severity = ?, triggers = ?, symptoms = ?, response_steps = ? WHERE id = ?",
         [name, severity, triggers, symptoms, steps, allergyId]
-      ));
+      ), allergyId, null, before);
     } else {
       const id         = crypto.randomUUID();
+      pendingInserts.add(id);
+      const before = snapshotEntry("allergies", pid, id);
       const sort_order = (allergies[pid] ?? []).length;
       if (!allergies[pid]) allergies[pid] = [];
-      allergies[pid].push({ id, profile_id: pid, name, severity, triggers, symptoms, response_steps: steps, sort_order, created_at: now });
+      const row = { id, profile_id: pid, name, severity, triggers, symptoms, response_steps: steps, sort_order, created_at: now, created_by: WRITER };
+      allergies[pid].push(row);
       closeModal();
       render();
       persist(db(
-        "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [id, pid, name, severity, triggers, symptoms, steps, sort_order, now]
-      ));
+        "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, triggers, symptoms, response_steps, sort_order, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [id, pid, name, severity, triggers, symptoms, steps, sort_order, now, WRITER]
+      ), null, { table: "app_health_cards__health_allergies", kind: "allergies", row }, before).finally(render);
     }
   } catch (e) {
     console.error(e);
-    hubAlert("That change could not be saved. Try again.");
+    hubAlert(failureLine(e, { action: "save that change" }));
   }
 };
 
 window.deleteAllergy = async function(allergyId) {
+  const pid0 = profiles[selectedMemberId]?.id;
+  if (!canChangeEntry((allergies[pid0] ?? []).find(r => r.id === allergyId))) return;
   const ok = await hubConfirm({ message: "Remove this allergy?", confirmLabel: "Remove", destructive: true });
   if (!ok) return;
+  // Asked again: an edit on this entry may have started while the dialog was open.
+  if (!canChangeEntry((allergies[profiles[selectedMemberId]?.id] ?? []).find(r => r.id === allergyId))) return;
   const pid = profiles[selectedMemberId]?.id;
+  const before = pid ? snapshotEntry("allergies", pid, allergyId) : null;
   if (pid) allergies[pid] = (allergies[pid] ?? []).filter(a => a.id !== allergyId);
   render();
-  persist(db("DELETE FROM app_health_cards__health_allergies WHERE id = ?", [allergyId]));
+  persist(db("DELETE FROM app_health_cards__health_allergies WHERE id = ?", [allergyId]), allergyId, null, before);
 };
 
 // ── Medication CRUD ──────────────────────────────────────────────────────────
 window.openMedicationModal = function(medId) {
+  if (!canEditCard(selectedMemberId)) return;
   const pid = profiles[selectedMemberId]?.id;
   const ex  = medId ? (medications[pid] ?? []).find(m => m.id === medId) : null;
+  if (medId && !canChangeEntry(ex)) return;
   openModal(`
     <h2>${ex ? "Edit Medication" : "Add Emergency Medication"}</h2>
     <div class="form-field">
@@ -812,6 +1421,7 @@ window.submitMedicationForm = async function(medId) {
     const now = new Date().toISOString();
 
     if (medId) {
+      const before = snapshotEntry("medications", pid, medId);
       const idx = (medications[pid] ?? []).findIndex(m => m.id === medId);
       if (idx >= 0) medications[pid][idx] = { ...medications[pid][idx], name, dose, when_to_give: when_to, location, notes };
       closeModal();
@@ -819,37 +1429,47 @@ window.submitMedicationForm = async function(medId) {
       persist(db(
         "UPDATE app_health_cards__health_medications SET name = ?, dose = ?, when_to_give = ?, location = ?, notes = ? WHERE id = ?",
         [name, dose, when_to, location, notes, medId]
-      ));
+      ), medId, null, before);
     } else {
       const id = crypto.randomUUID();
+      pendingInserts.add(id);
+      const before = snapshotEntry("medications", pid, id);
       if (!medications[pid]) medications[pid] = [];
-      medications[pid].push({ id, profile_id: pid, name, dose, when_to_give: when_to, location, notes, created_at: now });
+      const row = { id, profile_id: pid, name, dose, when_to_give: when_to, location, notes, created_at: now, created_by: WRITER };
+      medications[pid].push(row);
       closeModal();
       render();
       persist(db(
-        "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [id, pid, name, dose, when_to, location, notes, now]
-      ));
+        "INSERT INTO app_health_cards__health_medications (id, profile_id, name, dose, when_to_give, location, notes, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [id, pid, name, dose, when_to, location, notes, now, WRITER]
+      ), null, { table: "app_health_cards__health_medications", kind: "medications", row }, before).finally(render);
     }
   } catch (e) {
     console.error(e);
-    hubAlert("That change could not be saved. Try again.");
+    hubAlert(failureLine(e, { action: "save that change" }));
   }
 };
 
 window.deleteMedication = async function(medId) {
+  const pid0 = profiles[selectedMemberId]?.id;
+  if (!canChangeEntry((medications[pid0] ?? []).find(r => r.id === medId))) return;
   const ok = await hubConfirm({ message: "Remove this medication?", confirmLabel: "Remove", destructive: true });
   if (!ok) return;
+  // Asked again: an edit on this entry may have started while the dialog was open.
+  if (!canChangeEntry((medications[profiles[selectedMemberId]?.id] ?? []).find(r => r.id === medId))) return;
   const pid = profiles[selectedMemberId]?.id;
+  const before = pid ? snapshotEntry("medications", pid, medId) : null;
   if (pid) medications[pid] = (medications[pid] ?? []).filter(m => m.id !== medId);
   render();
-  persist(db("DELETE FROM app_health_cards__health_medications WHERE id = ?", [medId]));
+  persist(db("DELETE FROM app_health_cards__health_medications WHERE id = ?", [medId]), medId, null, before);
 };
 
 // ── Contact CRUD ─────────────────────────────────────────────────────────────
 window.openContactModal = function(contactId) {
+  if (!canEditCard(selectedMemberId)) return;
   const pid = profiles[selectedMemberId]?.id;
   const ex  = contactId ? (contacts[pid] ?? []).find(c => c.id === contactId) : null;
+  if (contactId && !canChangeEntry(ex)) return;
   openModal(`
     <h2>${ex ? "Edit Contact" : "Add Emergency Contact"}</h2>
     <div class="form-field">
@@ -885,6 +1505,7 @@ window.submitContactForm = async function(contactId) {
     const now = new Date().toISOString();
 
     if (contactId) {
+      const before = snapshotEntry("contacts", pid, contactId);
       const idx = (contacts[pid] ?? []).findIndex(c => c.id === contactId);
       if (idx >= 0) contacts[pid][idx] = { ...contacts[pid][idx], name, relationship: rel, phone };
       closeModal();
@@ -892,32 +1513,40 @@ window.submitContactForm = async function(contactId) {
       persist(db(
         "UPDATE app_health_cards__health_contacts SET name = ?, relationship = ?, phone = ? WHERE id = ?",
         [name, rel, phone, contactId]
-      ));
+      ), contactId, null, before);
     } else {
       const id       = crypto.randomUUID();
+      pendingInserts.add(id);
+      const before = snapshotEntry("contacts", pid, id);
       const priority = (contacts[pid] ?? []).length + 1;
       if (!contacts[pid]) contacts[pid] = [];
-      contacts[pid].push({ id, profile_id: pid, name, relationship: rel, phone, priority, created_at: now });
+      const row = { id, profile_id: pid, name, relationship: rel, phone, priority, created_at: now, created_by: WRITER };
+      contacts[pid].push(row);
       closeModal();
       render();
       persist(db(
-        "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [id, pid, name, rel, phone, priority, now]
-      ));
+        "INSERT INTO app_health_cards__health_contacts (id, profile_id, name, relationship, phone, priority, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [id, pid, name, rel, phone, priority, now, WRITER]
+      ), null, { table: "app_health_cards__health_contacts", kind: "contacts", row }, before).finally(render);
     }
   } catch (e) {
     console.error(e);
-    hubAlert("That change could not be saved. Try again.");
+    hubAlert(failureLine(e, { action: "save that change" }));
   }
 };
 
 window.deleteContact = async function(contactId) {
+  const pid0 = profiles[selectedMemberId]?.id;
+  if (!canChangeEntry((contacts[pid0] ?? []).find(r => r.id === contactId))) return;
   const ok = await hubConfirm({ message: "Remove this contact?", confirmLabel: "Remove", destructive: true });
   if (!ok) return;
+  // Asked again: an edit on this entry may have started while the dialog was open.
+  if (!canChangeEntry((contacts[profiles[selectedMemberId]?.id] ?? []).find(r => r.id === contactId))) return;
   const pid = profiles[selectedMemberId]?.id;
+  const before = pid ? snapshotEntry("contacts", pid, contactId) : null;
   if (pid) contacts[pid] = (contacts[pid] ?? []).filter(c => c.id !== contactId);
   render();
-  persist(db("DELETE FROM app_health_cards__health_contacts WHERE id = ?", [contactId]));
+  persist(db("DELETE FROM app_health_cards__health_contacts WHERE id = ?", [contactId]), contactId, null, before);
 };
 
 // ── Print card ───────────────────────────────────────────────────────────────
@@ -925,15 +1554,22 @@ window.deleteContact = async function(contactId) {
 // the app frame has no popups, so there is no second window to write into.
 window.printCard = function() {
   const member = members.find(m => m.id === selectedMemberId);
-  if (!member) return;
+  if (!member || accessDenied) return;
 
   const pid = profiles[selectedMemberId]?.id;
+  // A change still saving would print unconfirmed (an edit) or leave stored
+  // information off (a remove): the card waits until every write settles.
+  if (!printReady(writesInFlight, pid, careWriteInFlight)) {
+    hubAlert("Wait for your changes to save, then print.");
+    return;
+  }
   const printDate = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
   const markup = printCardMarkup({
     member,
-    allergies:   pid ? (allergies[pid]   ?? []) : [],
-    medications: pid ? (medications[pid] ?? []) : [],
-    contacts:    pid ? (contacts[pid]    ?? []) : [],
+    // Only what the hub has confirmed: an add still in flight stays off paper.
+    allergies:   pid ? confirmedEntries(allergies[pid], pendingInserts)   : [],
+    medications: pid ? confirmedEntries(medications[pid], pendingInserts) : [],
+    contacts:    pid ? confirmedEntries(contacts[pid], pendingInserts)    : [],
     printDate,
   }, { esc, glyph });
 
@@ -945,7 +1581,12 @@ async function firstLoad() {
   try {
     await loadMembers();
     render();
+    // The setting only labels the page (who the care team is): its failure
+    // leaves that unknown and the cards still load.
+    const settingsLoad = loadSettings().catch(e => console.error("care team setting unread", e));
     await loadAllProfileData();
+    await settingsLoad;
+    careTeamChecked = true;
     loadFailed = false;
   } catch (e) {
     console.error(e);
