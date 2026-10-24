@@ -1,0 +1,257 @@
+{
+  "scenarios": [
+    {
+      "name": "an admin shares a child's card from its Share button and the link is listed; another adult reads the card but is offered no Share button",
+      "members": {
+        "owner": "admin",
+        "parent": "adult",
+        "kid": "child"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__health_profiles (id, member_id, notes, card_name, visibility, created_at, updated_at) VALUES (?, ?, '', '', ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": [
+            "ui-kid",
+            "{{kid}}",
+            "adults"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, sort_order, created_by, created_at) VALUES (?, ?, ?, ?, 0, ?, '2026-01-01T00:00:00Z')",
+          "params": [
+            "a-ui-kid",
+            "ui-kid",
+            "Peanuts",
+            "mild",
+            "{{owner}}"
+          ]
+        },
+        {
+          "action": "open",
+          "as": "owner"
+        },
+        {
+          "action": "click",
+          "selector": ".member-card:has(.badge-normal)",
+          "as": "owner"
+        },
+        {
+          "action": "expectText",
+          "text": "Peanuts",
+          "as": "owner"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"card-share\"]",
+          "as": "owner"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"share-empty\"]",
+          "as": "owner"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"share-create\"]",
+          "as": "owner"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"share-row\"]",
+          "count": 1,
+          "as": "owner"
+        },
+        {
+          "action": "open",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": ".member-card:has(.badge-normal)",
+          "as": "parent"
+        },
+        {
+          "action": "expectText",
+          "text": "Peanuts",
+          "as": "parent"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"card-share\"]",
+          "count": 0,
+          "as": "parent"
+        }
+      ]
+    },
+    {
+      "name": "a nanny on the care team reads only the card shared with it and changes nothing on it, never an adult's own card",
+      "members": {
+        "owner": "admin",
+        "nanny": "guest",
+        "kid": "child"
+      },
+      "steps": [
+        {
+          "action": "seedGroup",
+          "group": "care",
+          "name": "Sitters",
+          "members": [
+            "nanny"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__settings (key, value) VALUES ('care_team_group_id', ?)",
+          "params": [
+            "{{group:care}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__health_profiles (id, member_id, notes, card_name, visibility, created_at, updated_at) VALUES (?, ?, '', '', ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": [
+            "ui-kid",
+            "{{kid}}",
+            "care"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, sort_order, created_by, created_at) VALUES (?, ?, ?, ?, 0, ?, '2026-01-01T00:00:00Z')",
+          "params": [
+            "a-ui-kid",
+            "ui-kid",
+            "Peanuts",
+            "mild",
+            "{{owner}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__health_profiles (id, member_id, notes, card_name, visibility, created_at, updated_at) VALUES ('ui-own', ?, '', '', 'adults', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": [
+            "{{owner}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__health_allergies (id, profile_id, name, severity, sort_order, created_by, created_at) VALUES ('a-ui-own', 'ui-own', 'Shellfish', 'severe', 0, ?, '2026-01-01T00:00:00Z')",
+          "params": [
+            "{{owner}}"
+          ]
+        },
+        {
+          "action": "open",
+          "as": "owner"
+        },
+        {
+          "action": "expectCount",
+          "selector": ".member-card [data-testid=\"care-badge\"]",
+          "count": 1,
+          "as": "owner"
+        },
+        {
+          "action": "open",
+          "as": "nanny"
+        },
+        {
+          "action": "expectText",
+          "text": "The cards shared with the care team",
+          "as": "nanny"
+        },
+        {
+          "action": "expectCount",
+          "selector": ".member-card",
+          "count": 1,
+          "as": "nanny"
+        },
+        {
+          "action": "click",
+          "selector": ".member-card",
+          "as": "nanny"
+        },
+        {
+          "action": "expectText",
+          "text": "Peanuts",
+          "as": "nanny"
+        },
+        {
+          "action": "expectNoText",
+          "text": "Shellfish",
+          "as": "nanny"
+        },
+        {
+          "action": "expectCount",
+          "selector": ".entry-actions",
+          "count": 0,
+          "as": "nanny"
+        },
+        {
+          "action": "expectCount",
+          "selector": ".btn-add",
+          "count": 0,
+          "as": "nanny"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"card-share\"]",
+          "count": 0,
+          "as": "nanny"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"care-row\"]",
+          "count": 0,
+          "as": "nanny"
+        }
+      ]
+    },
+    {
+      "name": "a guest the app is granted to but who is not on the care team sees no card",
+      "members": {
+        "owner": "admin",
+        "sitter": "guest",
+        "kid": "child"
+      },
+      "steps": [
+        {
+          "action": "seedGroup",
+          "group": "care",
+          "name": "Sitters",
+          "members": []
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__settings (key, value) VALUES ('care_team_group_id', ?)",
+          "params": [
+            "{{group:care}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_health_cards__health_profiles (id, member_id, notes, card_name, visibility, created_at, updated_at) VALUES ('ui-kid', ?, '', '', 'care', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": [
+            "{{kid}}"
+          ]
+        },
+        {
+          "action": "open",
+          "as": "sitter"
+        },
+        {
+          "action": "expectText",
+          "text": "No health cards are shared with you.",
+          "as": "sitter"
+        },
+        {
+          "action": "expectCount",
+          "selector": ".member-card",
+          "count": 0,
+          "as": "sitter"
+        }
+      ]
+    }
+  ]
+}
